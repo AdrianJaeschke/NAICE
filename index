@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#020205;overflow:hidden;font-family:'Helvetica Neue',sans-serif;color:#fff}
+    canvas{display:block;cursor:grab}
+    canvas.dragging{cursor:grabbing}
+    #drop-zone{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:10}
+    #drop-zone.hidden{display:none}
+    #drop-icon{width:64px;height:64px;border:1px solid rgba(255,255,255,0.1);border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.03)}
+    #drop-icon svg{width:24px;stroke:rgba(255,255,255,0.4);fill:none;stroke-width:1.5}
+    #upload-btn{padding:10px 24px;background:#fff;border:none;border-radius:20px;color:#000;font-weight:600;cursor:pointer;font-size:12px}
+    #controls{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);display:flex;gap:15px;opacity:0;transition:opacity .5s}
+    #controls.visible{opacity:1}
+    .btn{padding:8px 16px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:11px;cursor:pointer;backdrop-filter:blur(10px)}
+    #progress{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:none;text-align:center}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="drop-zone">
+    <div id="drop-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></div>
+    <div style="font-size:14px;color:rgba(255,255,255,0.5)">Bilder hierher ziehen</div>
+    <button id="upload-btn">Dateien wählen</button>
+    <input type="file" id="file-input" accept="image/*" multiple style="display:none">
+</div>
+
+<div id="progress"><div id="p-label" style="font-size:12px;letter-spacing:2px">PROZESSIERE...</div></div>
+
+<div id="controls">
+    <button class="btn" id="btn-add">+ Hinzufügen</button>
+    <button class="btn" id="btn-clear">Leeren</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let scenes = [];
+let allSplats = [];
+let rotX = 0.3, rotY = 0.5, zoom = 600;
+let isDrag = false, lastMX = 0, lastMY = 0;
+let t = 0;
+
+function resize(){
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function project(x, y, z) {
+    let rx = x * Math.cos(rotY) + z * Math.sin(rotY);
+    let rz = -x * Math.sin(rotY) + z * Math.cos(rotY);
+    let ry = y * Math.cos(rotX) - rz * Math.sin(rotX);
+    let rz2 = y * Math.sin(rotX) + rz * Math.cos(rotX);
+    const f = zoom, d = f / (f + rz2 * 250);
+    return { sx: canvas.width/2 + rx * f * d, sy: canvas.height/2 + ry * f * d, depth: rz2, scale: d };
+}
+
+async function createSplatsFromImage(img, count = 3500) {
+    const off = document.createElement('canvas');
+    const size = 120;
+    off.width = off.height = size;
+    const octx = off.getContext('2d');
+    octx.drawImage(img, 0, 0, size, size);
+    const data = octx.getImageData(0, 0, size, size).data;
+    const splats = [];
+    
+    for(let i=0; i<count; i++) {
+        const px = Math.random() * size | 0;
+        const py = Math.random() * size | 0;
+        const idx = (py * size + px) * 4;
+        if(data[idx+3] < 128) continue;
+
+        const aspect = img.width / img.height;
+        splats.push({
+            lx: (px/size - 0.5) * 2 * aspect,
+            ly: (py/size - 0.5) * 2,
+            lz: (Math.random() - 0.5) * 0.1,
+            r: data[idx], g: data[idx+1], b: data[idx+2],
+            size: 2 + Math.random() * 5,
+            alpha: 0.2 + Math.random() * 0.4
+        });
+    }
+    return splats;
+}
+
+async function handleFiles(files) {
+    document.getElementById('drop-zone').classList.add('hidden');
+    document.getElementById('progress').style.display = 'block';
+    
+    const newImgs = [];
+    for(let file of files) {
+        const img = await new Promise(res => {
+            const r = new FileReader();
+            r.onload = e => {
+                const i = new Image();
+                i.onload = () => res(i);
+                i.src = e.target.result;
+            };
+            r.readAsDataURL(file);
+        });
+        newImgs.push(img);
+    }
+
+    for(let img of newImgs) {
+        const s = await createSplatsFromImage(img);
+        scenes.push({ splats: s });
+    }
+
+    // Multi-Case Layout: Anordnung im Kreis
+    const radius = scenes.length > 1 ? 2.5 : 0;
+    scenes.forEach((scene, i) => {
+        const angle = (i / scenes.length) * Math.PI * 2;
+        const cx = Math.sin(angle) * radius;
+        const cz = Math.cos(angle) * radius;
+        scene.splats.forEach(p => {
+            p.gx = cx + p.lx;
+            p.gy = p.ly;
+            p.gz = cz + p.lz;
+        });
+    });
+
+    allSplats = scenes.flatMap(s => s.splats);
+    document.getElementById('progress').style.display = 'none';
+    document.getElementById('controls').classList.add('visible');
+}
+
+function draw() {
+    t += 0.005;
+    if(!isDrag) rotY += 0.003;
+    
+    ctx.fillStyle = '#020205';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    
+    // Depth Sorting
+    const projected = allSplats.map(s => ({...s, ...project(s.gx, s.gy, s.gz)}));
+    projected.sort((a,b) => b.depth - a.depth);
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    projected.forEach(s => {
+        const sz = s.size * s.scale;
+        if(sz < 0.5) return;
+
+        // "Runder & Ausfaden": Radialer Gradient für weiche Kanten
+        const g = ctx.createRadialGradient(s.sx, s.sy, 0, s.sx, s.sy, sz);
+        g.addColorStop(0, `rgba(${s.r},${s.g},${s.b},${s.alpha})`);
+        g.addColorStop(0.5, `rgba(${s.r},${s.g},${s.b},${s.alpha * 0.3})`);
+        g.addColorStop(1, `rgba(${s.r},${s.g},${s.b},0)`);
+        
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(s.sx, s.sy, sz, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    ctx.globalCompositeOperation = 'source-over';
+    requestAnimationFrame(draw);
+}
+
+// Events
+document.getElementById('upload-btn').onclick = () => document.getElementById('file-input').click();
+document.getElementById('btn-add').onclick = () => document.getElementById('file-input').click();
+document.getElementById('file-input').onchange = (e) => handleFiles(e.target.files);
+document.getElementById('btn-clear').onclick = () => { scenes = []; allSplats = []; document.getElementById('drop-zone').classList.remove('hidden'); };
+
+canvas.onmousedown = (e) => { isDrag = true; lastMX = e.clientX; lastMY = e.clientY; };
+window.onmousemove = (e) => {
+    if(!isDrag) return;
+    rotY += (e.clientX - lastMX) * 0.01;
+    rotX += (e.clientY - lastMY) * 0.01;
+    lastMX = e.clientX; lastMY = e.clientY;
+};
+window.onmouseup = () => isDrag = false;
+canvas.onwheel = (e) => { zoom -= e.deltaY * 0.5; e.preventDefault(); };
+
+draw();
+</script>
+</body>
+</html>
