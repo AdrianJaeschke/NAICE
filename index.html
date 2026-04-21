@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>NAICE - 3D Portfolio</title>
+    <title>NAICE - Advanced 3D Portfolio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@200;300;400&family=Turret+Road:wght@200;400;700&display=swap" rel="stylesheet">
@@ -39,18 +39,14 @@
             letter-spacing: 20px; color: var(--neon); text-transform: uppercase;
             text-shadow: 0 0 30px rgba(187,255,3,0.6); margin: 0;
         }
-
         #hud-overlay { display: none; position: fixed; top: 30px; right: 40px; z-index: 2000; }
         #close-hud { font-size: 35px; color: var(--neon); cursor: pointer; text-shadow: 0 0 10px var(--neon); }
-        
         canvas { display: block; cursor: crosshair; }
     </style>
 </head>
 <body>
 
-<div id="init-trigger">
-    <div class="loader-text">INITIALIZING POINT CLOUDS...</div>
-</div>
+<div id="init-trigger"><div class="loader-text">GENERATING ADDITIVE CLOUDS...</div></div>
 
 <div id="nav-bar">
     <div id="logo-link" onclick="closeHUD()">
@@ -85,32 +81,29 @@ async function autoLoadPortfolio() {
         const contents = await response.json();
         const folders = contents.filter(item => item.type === 'dir');
 
-        initAtmosphere(); // Die neon-grüne Haupt-Cloud
+        initAtmosphere(); // Die grüne Basis-Cloud
 
         for (let folder of folders) {
             const folderResponse = await fetch(folder.url);
             const files = await folderResponse.json();
-
             const imageFiles = files.filter(f => f.name.match(/\.(jpg|jpeg|png)$/i));
             const textFile = files.find(f => f.name.endsWith('.txt'));
 
             if (imageFiles.length > 0) {
                 const img = new Image();
-                // Proxy/CORS umgehen für Farbauslesung
                 img.crossOrigin = "anonymous"; 
-                img.src = imageFiles[0].download_url + "?not-from-cache-please"; 
+                img.src = imageFiles[0].download_url + "?t=" + Date.now(); 
                 
                 await new Promise((resolve) => {
                     img.onload = resolve;
-                    img.onerror = resolve; // Weitermachen auch bei Fehlern
+                    img.onerror = resolve;
                 });
 
                 let headline = folder.name;
                 if (textFile) {
                     try {
                         const txtRes = await fetch(textFile.download_url);
-                        const rawText = await txtRes.text();
-                        headline = rawText.split('\n')[0].trim();
+                        headline = (await txtRes.text()).split('\n')[0].trim();
                     } catch(e) {}
                 }
 
@@ -128,58 +121,60 @@ async function autoLoadPortfolio() {
             p.angle = angle;
             p.cx = Math.sin(angle) * 600;
             p.cz = Math.cos(angle) * 600;
+            // Wir fügen hier die doppelten Punkte hinzu
             points.push(...extractPoints(p.img, p));
         });
 
         document.getElementById('init-trigger').style.opacity = '0';
         setTimeout(() => document.getElementById('init-trigger').style.display = 'none', 1000);
-
-    } catch (e) {
-        console.error("API Error:", e);
-    }
+    } catch (e) { console.error(e); }
 }
 
-// HAUPT POINT CLOUD (NEON GRÜN)
 function initAtmosphere() {
-    for(let i=0; i<7000; i++) {
-        const r = 400 + Math.random() * 900;
+    for(let i=0; i<6000; i++) {
+        const r = 500 + Math.random() * 1000;
         const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 2 - 1);
         points.push({ 
             x: r*Math.sin(p)*Math.cos(t), y: r*Math.sin(p)*Math.sin(t), z: r*Math.cos(p),
-            r: 187, g: 255, b: 3, a: 0.15, size: 1.5, isBg: true 
+            r: 187, g: 255, b: 3, a: 0.1, size: 1.2, isBg: true 
         });
     }
 }
 
-// CASE POINT CLOUDS (FARBEN AUS BILD)
 function extractPoints(img, proj) {
-    const samples = 1800;
     const tempCv = document.createElement('canvas'); 
     tempCv.width = tempCv.height = 64;
     const tCtx = tempCv.getContext('2d');
-    
     let pixelData;
     try {
         tCtx.drawImage(img, 0, 0, 64, 64);
         pixelData = tCtx.getImageData(0,0,64,64).data;
-    } catch(e) {
-        // Falls CORS fehlschlägt: Fallback zu Weiß/Grau
-        pixelData = new Uint8Array(64*64*4).fill(200);
-    }
+    } catch(e) { pixelData = new Uint8Array(64*64*4).fill(200); }
 
     const pts = [];
-    for(let i=0; i<samples; i++) {
+    
+    // 1. LAYER: MORPH POINTS (wandern zum Bild)
+    for(let i=0; i<1500; i++) {
         const u = Math.random(), v = Math.random();
-        const tx = (u-0.5)*220, ty = (v-0.5)*220;
         const idx = (Math.floor(v*63)*64 + Math.floor(u*63))*4;
         pts.push({ 
             cx: proj.cx, cz: proj.cz, angle: proj.angle,
-            rx: Math.cos(Math.random()*Math.PI*2)*180, 
-            ry: Math.sin(Math.random()*Math.PI*2)*180, 
-            rz: (Math.random()-0.5)*220,
-            tx, ty, tz: 0, 
-            r: pixelData[idx], g: pixelData[idx+1], b: pixelData[idx+2], a: 0.9,
-            size: 2.5, parent: proj, isBg: false 
+            rx: (Math.random()-0.5)*400, ry: (Math.random()-0.5)*400, rz: (Math.random()-0.5)*400,
+            tx: (u-0.5)*220, ty: (v-0.5)*220, tz: 0, 
+            r: pixelData[idx], g: pixelData[idx+1], b: pixelData[idx+2], a: 0.8,
+            size: 2, parent: proj, type: 'morph'
+        });
+    }
+
+    // 2. LAYER: ADDITIVE ORBIT POINTS (bleiben immer eine Wolke um das Bild)
+    for(let i=0; i<600; i++) {
+        const u = Math.random(), v = Math.random();
+        const idx = (Math.floor(v*63)*64 + Math.floor(u*63))*4;
+        pts.push({ 
+            cx: proj.cx, cz: proj.cz, angle: proj.angle,
+            rx: (Math.random()-0.5)*350, ry: (Math.random()-0.5)*350, rz: (Math.random()-0.5)*350,
+            r: pixelData[idx], g: pixelData[idx+1], b: pixelData[idx+2], a: 0.4,
+            size: 1.5, parent: proj, type: 'orbit'
         });
     }
     return pts;
@@ -190,10 +185,7 @@ function render() {
     ctx.fillStyle = '#010103'; ctx.fillRect(0,0,canvas.width,canvas.height);
     const cX = canvas.width / 2, cY = canvas.height / 2;
 
-    if (!activeCase) {
-        rotY += 0.002;
-    }
-    
+    if (!activeCase) rotY += 0.002;
     const cosY = Math.cos(rotY), sinY = Math.sin(rotY), cosX = Math.cos(rotX), sinX = Math.sin(rotX);
 
     if (!activeCase) {
@@ -206,24 +198,35 @@ function render() {
 
         const sortedPoints = points.map(p => {
             let x,y,z;
-            if(p.isBg){x=p.x;y=p.y;z=p.z}
+            if(p.isBg){ x=p.x; y=p.y; z=p.z; }
             else {
-                const f=p.parent.focus;
-                const lx=p.rx*(1-f)+p.tx*f, ly=p.ry*(1-f)+p.ty*f, lz=p.rz*(1-f);
-                x=p.cx+(lx*Math.cos(-p.angle)+lz*Math.sin(-p.angle)); y=ly; z=p.cz+(lz*Math.cos(-p.angle)-lx*Math.sin(-p.angle));
+                const f = p.parent.focus;
+                if(p.type === 'morph') {
+                    // Wandert von rx/ry/rz zu tx/ty/tz
+                    const lx = p.rx*(1-f) + p.tx*f;
+                    const ly = p.ry*(1-f) + p.ty*f;
+                    const lz = p.rz*(1-f) + p.tz*f;
+                    x = p.cx + (lx*Math.cos(-p.angle) + lz*Math.sin(-p.angle));
+                    y = ly;
+                    z = p.cz + (lz*Math.cos(-p.angle) - lx*Math.sin(-p.angle));
+                } else {
+                    // Orbit Point: Bleibt immer in der Nähe (rx/ry/rz), pulsiert leicht
+                    const pulse = 1 + Math.sin(Date.now()*0.001 + p.rx)*0.1;
+                    x = p.cx + (p.rx*pulse*Math.cos(-p.angle) + p.rz*pulse*Math.sin(-p.angle));
+                    y = p.ry*pulse;
+                    z = p.cz + (p.rz*pulse*Math.cos(-p.angle) - p.rx*pulse*Math.sin(-p.angle));
+                }
             }
             let x1=x*cosY+z*sinY, z1=z*cosY-x*sinY, y2=y*cosX-z1*sinX, z2=z1*cosX+y*sinX;
             const s=zoom/(zoom+z2);
+            let finalAlpha = p.isBg ? p.a : (p.type === 'orbit' ? p.a * (1+p.parent.focus) : p.a);
             return {px:cX+x1*s, py:cY+y2*s, pz:z2, size:p.size*s, 
-                    color:`rgba(${p.r},${p.g},${p.b},${p.isBg?p.a:p.a*(0.4+p.parent.focus*0.6)})`};
+                    color:`rgba(${p.r},${p.g},${p.b},${finalAlpha})`};
         }).filter(p=>p.pz>-zoom).sort((a,b)=>b.pz-a.pz);
 
         sortedPoints.forEach(p=>{
-            ctx.beginPath();
-            ctx.fillStyle = p.color;
-            // RUNDE PUNKTE zeichnen
-            ctx.arc(p.px, p.py, p.size/2, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.fillStyle = p.color;
+            ctx.arc(p.px, p.py, p.size/2, 0, Math.PI*2); ctx.fill();
         });
 
         projects.forEach(p=>{ 
@@ -231,7 +234,7 @@ function render() {
             const s=zoom/(zoom+z2);
             if(p.focus>0.01){
                 ctx.save(); ctx.translate(cX+x1*s,cY+y2*s); 
-                ctx.globalAlpha=Math.pow(p.focus,4);
+                ctx.globalAlpha=Math.pow(p.focus,5);
                 ctx.drawImage(p.img,-110*s,-110*s,220*s,220*s); 
                 ctx.restore();
             }
@@ -239,14 +242,11 @@ function render() {
             ctx.globalAlpha = 0.2 + (p.focus * 0.8);
             ctx.fillStyle = p.focus > 0.5 ? "var(--neon)" : "#fff";
             ctx.font = `300 ${10 * s}px "Barlow Condensed"`;
-            ctx.textAlign = "center";
-            ctx.letterSpacing = "4px";
-            ctx.fillText(p.headline, 0, 12 + (20*s*p.focus));
+            ctx.textAlign = "center"; ctx.letterSpacing = "4px";
+            ctx.fillText(p.headline, 0, 12 + (25*s*p.focus));
             ctx.restore();
         });
-    } else {
-        renderHUD(cX, cY);
-    }
+    } else { renderHUD(cX, cY); }
     requestAnimationFrame(render);
 }
 
@@ -254,7 +254,6 @@ function renderHUD(cX, cY) {
     hudRotY += ((mouse.x-cX)*0.0004-hudRotY)*0.1;
     hudRotX += (-(mouse.y-cY)*0.0004-hudRotX)*0.1;
     const hCosY=Math.cos(hudRotY), hSinY=Math.sin(hudRotY), hCosX=Math.cos(hudRotX), hSinX=Math.sin(hudRotX);
-
     collageImages.map(imgObj => {
         let x1=imgObj.x*hCosY+imgObj.z*hSinY, z1=imgObj.z*hCosY-imgObj.x*hSinY;
         let y2=imgObj.y*hCosX-z1*hSinX, z2=z1*hCosX+imgObj.y*hSinX;
@@ -277,7 +276,6 @@ async function openCaseHUD(p) {
     document.getElementById('case-label').style.display = "inline";
     document.getElementById('current-case-name').innerText = p.name.toUpperCase();
     document.getElementById('hud-overlay').style.display = "block";
-    
     collageImages = [];
     for(let [i, url] of p.files.entries()) {
         const img = new Image(); img.crossOrigin = "anonymous"; img.src = url; 
@@ -304,12 +302,11 @@ canvas.onmousedown=e=>{
     isDrag=false;lastMX=e.clientX;lastMY=e.clientY;
     const mm=ev=>{
         if(Math.abs(ev.clientX-lastMX)>5)isDrag=true;
-        rotY+=(ev.clientX-lastMX)*0.005;
-        rotX+=(ev.clientY-lastMY)*0.005;
-        lastMX=ev.clientX;lastMY=ev.clientY;
+        rotY+=(ev.clientX-lastMX)*0.005; rotX+=(ev.clientY-lastMY)*0.005;
+        lastMX=ev.clientX; lastMY=ev.clientY;
     };
     const mu=()=>{window.removeEventListener('mousemove',mm);window.removeEventListener('mouseup',mu)};
-    window.addEventListener('mousemove',mm);window.addEventListener('mouseup',mu);
+    window.addEventListener('mousemove',mm); window.addEventListener('mouseup',mu);
 };
 canvas.onclick=()=>{if(!isDrag&&!activeCase){const active=projects.find(p=>p.focus>0.7);if(active)openCaseHUD(active)}};
 canvas.addEventListener('wheel',e=>{e.preventDefault();if(!activeCase)zoom-=e.deltaY;},{passive:false});
