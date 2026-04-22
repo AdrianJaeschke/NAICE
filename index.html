@@ -37,7 +37,7 @@
 </head>
 <body>
 
-<div id="init-trigger"><div class="loader-text">SYNCING LIVE REPOSITORY & GLTF...</div></div>
+<div id="init-trigger"><div class="loader-text">INITIALIZING 3D CORE & PROJECTS...</div></div>
 
 <div id="nav-bar">
     <div onclick="closeHUD()"><img src="assets/naice.png" alt="naice" style="height:35px; cursor: pointer; filter: drop-shadow(0 0 5px var(--neon));"></div>
@@ -59,10 +59,10 @@ const GITHUB_REPO = "NAICE";
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 let points = [], projects = [], collageImages = []; 
-let rotX = 0.3, rotY = 0.5, zoom = 800;
+let rotX = 0.3, rotY = 0.5, zoom = 1000;
 let mouse = { x: 0, y: 0 }, isDrag = false, lastMX, lastMY, activeCase = null;
 
-// --- 1. DIRECT GLTF LOADER (Ohne JSON) ---
+// --- 1. DIRECT GLTF LOADER (Zentrum Modell) ---
 async function loadGltfDirectly(url) {
     try {
         const response = await fetch(url);
@@ -79,19 +79,25 @@ async function loadGltfDirectly(url) {
             binaryData = await binRes.arrayBuffer();
         }
 
-        // Accessor 1: Positionen
-        const acc = gltf.accessors[1];
+        const acc = gltf.accessors[1]; // Positions
         const bv = gltf.bufferViews[acc.bufferView];
         const byteOffset = (bv.byteOffset || 0) + (acc.byteOffset || 0);
-        const positions = new Float32Array(binaryData, byteOffset, acc.count * 3);
+        
+        const ds = new DataView(binaryData);
+        const stride = bv.byteStride || 12;
 
-        for (let i = 0; i < positions.length; i += 3) {
+        for (let i = 0; i < acc.count; i++) {
+            const idx = byteOffset + i * stride;
+            // Scale * 600, damit es im Zentrum zwischen den Cases (Radius 650) sichtbar ist
             points.push({
-                x: positions[i] * 380, y: positions[i+1] * -380, z: positions[i+2] * 380,
-                r: 187, g: 255, b: 3, a: 0.3, size: 3.5,
+                x: ds.getFloat32(idx, true) * 600,
+                y: ds.getFloat32(idx + 4, true) * -600,
+                z: ds.getFloat32(idx + 8, true) * 600,
+                r: 187, g: 255, b: 3, a: 0.45, size: 4.5,
                 type: 'model-splat'
             });
         }
+        console.log("3D Model loaded as Core.");
     } catch (e) { console.error("GLTF Load Error:", e); }
 }
 
@@ -102,7 +108,7 @@ async function autoLoadPortfolio() {
         const contents = await response.json();
         const folders = contents.filter(item => item.type === 'dir');
 
-        initAtmosphere(); // Hintergrund Cloud
+        initAtmosphere(); 
 
         for (let folder of folders) {
             const fRes = await fetch(folder.url);
@@ -132,7 +138,7 @@ async function autoLoadPortfolio() {
 
         projects.forEach((p, i) => {
             const angle = (i / projects.length) * Math.PI * 2;
-            p.angle = angle; p.cx = Math.sin(angle) * 650; p.cz = Math.cos(angle) * 650;
+            p.angle = angle; p.cx = Math.sin(angle) * 750; p.cz = Math.cos(angle) * 750;
             extractProjectPoints(p);
         });
 
@@ -143,7 +149,7 @@ async function autoLoadPortfolio() {
 
 function initAtmosphere() {
     for(let i=0; i<6000; i++) {
-        const r = 500 + Math.random() * 1000;
+        const r = 600 + Math.random() * 1200;
         const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 2 - 1);
         points.push({ x: r*Math.sin(p)*Math.cos(t), y: r*Math.sin(p)*Math.sin(t), z: r*Math.cos(p),
                       r: 187, g: 255, b: 3, a: 0.08, size: 1.5, isBg: true });
@@ -222,7 +228,7 @@ function render() {
             ctx.save(); ctx.translate(cX+x1*s,cY+y2*s); ctx.globalAlpha = 0.3 + (p.focus*0.7);
             ctx.fillStyle = p.focus > 0.5 ? "var(--neon)" : "#fff";
             ctx.font = `${11*s}px "Barlow Condensed"`; ctx.textAlign="center"; ctx.letterSpacing="4px";
-            ctx.fillText(p.headline, 0, 15 + (20*s*p.focus)); ctx.restore();
+            ctx.fillText(p.headline, 0, 15 + (25*s*p.focus)); ctx.restore();
         });
     } else { renderHUD(cX, cY); }
     requestAnimationFrame(render);
@@ -254,7 +260,7 @@ async function openCaseHUD(p) {
     for(let [i, url] of p.files.entries()) {
         const img = new Image(); img.crossOrigin="anonymous"; img.src=url; await new Promise(r=>img.onload=r);
         const isL = i===0;
-        collageImages.push({ el:img, aspect:img.width/img.height, x:isL?0:(Math.random()-0.5)*600, y:isL?50:(Math.random()-0.5)*600, z:isL?-200:Math.random()*400, baseSize:isL?500:250, rot:(Math.random()-0.5)*0.2 });
+        collageImages.push({ el:img, aspect:img.width/img.height, x:isL?0:(Math.random()-0.5)*700, y:isL?50:(Math.random()-0.5)*700, z:isL?-200:Math.random()*400, baseSize:isL?550:280, rot:(Math.random()-0.5)*0.2 });
     }
 }
 
