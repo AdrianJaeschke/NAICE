@@ -2,146 +2,120 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>NAICE - Debugging Core</title>
-    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@200;400&family=Turret+Road:wght@200;700&display=swap" rel="stylesheet">
+    <title>NAICE - 3D Core Fix</title>
     <style>
-        :root { --neon: #BBFF03; }
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{background:#010103;overflow:hidden;font-family: "Barlow Condensed", sans-serif; color:#fff}
-        #nav-bar { position: absolute; top: 20px; left: 20px; z-index: 1000; background: rgba(0,0,0,0.6); padding: 10px; border: 1px solid var(--neon); }
-        #debug-log { position: fixed; bottom: 10px; left: 10px; font-family: monospace; font-size: 10px; color: #ff4444; z-index: 9999; pointer-events: none; }
+        body { background: #010103; margin: 0; overflow: hidden; color: #BBFF03; font-family: sans-serif; }
+        #status { position: fixed; top: 10px; left: 10px; font-size: 12px; z-index: 10; background: rgba(0,0,0,0.5); padding: 5px; }
         canvas { display: block; }
     </style>
 </head>
 <body>
 
-<div id="debug-log">Log: Warte auf Initialisierung...</div>
-
-<div id="nav-bar">
-    <img src="assets/naice.png" alt="naice" style="height:30px; filter: drop-shadow(0 0 5px var(--neon));">
-    <span style="margin-left:10px; color:var(--neon)">3D DEBUG MODE</span>
-</div>
-
+<div id="status">Status: Initialisierung...</div>
 <canvas id="c"></canvas>
 
 <script>
-const GITHUB_USER = "AdrianJaeschke";
-const GITHUB_REPO = "NAICE";
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const logEl = document.getElementById('debug-log');
+const statusEl = document.getElementById('status');
 
-let points = [], projects = [];
-let rotX = 0.3, rotY = 0.5, zoom = 1200;
-let mouse = { x: 0, y: 0 };
+let points = [];
+let rotY = 0, rotX = 0.4, zoom = 1200;
 
-function log(msg, isError = false) {
-    console.log(msg);
-    logEl.innerText = msg;
-    if(isError) logEl.style.color = "#ff4444";
-    else logEl.style.color = "#BBFF03";
-}
+async function loadGltf() {
+    const url = 'textured.gltf';
+    statusEl.innerText = "Status: Lade " + url + "...";
 
-// --- 1. DER ROBUSTE LOADER MIT DEBUGGING ---
-async function loadGltfDirectly(url) {
-    log("Lade GLTF: " + url + "...");
     try {
         const response = await fetch(url);
-        if(!response.ok) throw new Error("Datei nicht gefunden (404). Check den Dateinamen!");
+        if (!response.ok) throw new Error("Datei nicht gefunden. Server gestartet? Pfad korrekt?");
         
         const gltf = await response.json();
-        log("GLTF JSON geladen. Suche Buffer...");
-
-        if(!gltf.buffers || !gltf.buffers[0]) throw new Error("Keine Buffer in GLTF gefunden.");
         
-        const bufferUri = gltf.buffers[0].uri;
-        let binaryData;
-
-        if (bufferUri.startsWith('data:')) {
-            log("Extrahiere Base64 Daten...");
-            const base64 = bufferUri.split(',')[1];
-            const binaryString = atob(base64);
-            binaryData = new ArrayBuffer(binaryString.length);
-            const uint8 = new Uint8Array(binaryData);
-            for (let i = 0; i < binaryString.length; i++) uint8[i] = binaryString.charCodeAt(i);
-        } else {
-            log("Lade externe .bin Datei...");
-            const binRes = await fetch(url.replace('.gltf', '.bin'));
-            if(!binRes.ok) throw new Error(".bin Datei fehlt!");
-            binaryData = await binRes.arrayBuffer();
+        // Suche den Buffer (Meistens die .bin Datei)
+        const bufferInfo = gltf.buffers[0];
+        let binUrl = bufferInfo.uri;
+        
+        // Falls die URI ein relativer Pfad zur .bin ist:
+        if (!binUrl.startsWith('data:')) {
+            binUrl = url.replace('textured.gltf', binUrl);
         }
 
-        // Wir scannen alle Accessoren, um den mit VEC3 (Positionen) zu finden
-        // In deiner Datei ist es meist Index 1
-        const posAccessorIndex = 1; 
-        const acc = gltf.accessors[posAccessorIndex];
+        statusEl.innerText = "Status: Lade Binärdaten (" + binUrl + ")...";
+        const binRes = await fetch(binUrl);
+        if (!binRes.ok) throw new Error("Die zugehörige .bin Datei wurde nicht gefunden!");
+        const binData = await binRes.arrayBuffer();
+
+        // DEIN MODELL: Accessor 1 (Positionen), BufferView 1, Stride 32
+        const acc = gltf.accessors[1];
         const bv = gltf.bufferViews[acc.bufferView];
+        const offset = (bv.byteOffset || 0) + (acc.byteOffset || 0);
+        const stride = bv.byteStride || 12; // In deiner Datei 32
         
-        log(`Accessor gefunden: Count ${acc.count}, Stride ${bv.byteStride || 12}`);
-
-        const byteOffset = (bv.byteOffset || 0) + (acc.byteOffset || 0);
-        const stride = bv.byteStride || 12;
-        const ds = new DataView(binaryData);
-
+        const dv = new DataView(binData);
+        
         for (let i = 0; i < acc.count; i++) {
-            const start = byteOffset + (i * stride);
-            // Wir lesen Float32 (x,y,z)
+            const start = offset + (i * stride);
+            
+            // X, Y, Z extrahieren und skalieren
             points.push({
-                x: ds.getFloat32(start, true) * 800,
-                y: ds.getFloat32(start + 4, true) * -800,
-                z: ds.getFloat32(start + 8, true) * 800,
-                r: 187, g: 255, b: 3, a: 0.6, size: 5,
-                type: 'model-splat'
+                x: dv.getFloat32(start, true) * 800,
+                y: dv.getFloat32(start + 4, true) * -800, // Y-Flip
+                z: dv.getFloat32(start + 8, true) * 800,
+                a: 0.5
             });
         }
-        log("ERFOLG: " + points.length + " Punkte im Zentrum.");
+
+        statusEl.innerText = "Status: " + points.length + " Punkte geladen. Rendering läuft.";
+        statusEl.style.color = "#BBFF03";
+
     } catch (e) {
-        log("FEHLER: " + e.message, true);
+        statusEl.innerText = "ERROR: " + e.message;
+        statusEl.style.color = "#ff4444";
         console.error(e);
     }
 }
 
-// --- 2. MINIMALER RENDERER FÜR TESTS ---
 function render() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.fillStyle = '#010103';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
     const cX = canvas.width / 2;
     const cY = canvas.height / 2;
 
-    rotY += 0.003;
-    const cY_r = Math.cos(rotY), sY_r = Math.sin(rotY), cX_r = Math.cos(rotX), sX_r = Math.sin(rotX);
+    rotY += 0.005;
+    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
 
-    // Zeichne nur das Modell
-    const drawList = points.map(p => {
-        let x1 = p.x*cY_r + p.z*sY_r, 
-            z1 = p.z*cY_r - p.x*sY_r, 
-            y2 = p.y*cX_r - z1*sX_r, 
-            z2 = z1*cX_r + p.y*sX_r;
-        
+    // Zeichne Punkte
+    ctx.fillStyle = 'rgba(187, 255, 3, 0.5)';
+    for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+
+        // 3D Rotation
+        let x1 = p.x * cosY + p.z * sinY;
+        let z1 = p.z * cosY - p.x * sinY;
+        let y2 = p.y * cosX - z1 * sinX;
+        let z2 = z1 * cosX + p.y * sinX;
+
         const s = zoom / (zoom + z2);
-        return { px: cX + x1*s, py: cY + y2*s, pz: z2, size: p.size*s, color: `rgba(${p.r},${p.g},${p.b},${p.a})` };
-    }).filter(p => p.pz > -zoom).sort((a,b) => b.pz - a.pz);
-
-    drawList.forEach(p => {
-        ctx.beginPath();
-        ctx.fillStyle = p.color;
-        ctx.arc(p.px, p.py, p.size/2, 0, Math.PI*2);
-        ctx.fill();
-    });
-
+        if (z2 > -zoom) {
+            const px = cX + x1 * s;
+            const py = cY + y2 * s;
+            
+            // Gaussian Splat Effekt (einfachere Version für Speed)
+            ctx.globalAlpha = p.a * s;
+            ctx.fillRect(px, py, 3 * s, 3 * s);
+        }
+    }
+    ctx.globalAlpha = 1;
     requestAnimationFrame(render);
 }
 
-// Start
-window.onload = () => {
-    loadGltfDirectly('textured.gltf');
-    render();
-};
-
-window.onmousemove = e => { mouse.x = e.clientX; mouse.y = e.clientY; };
+loadGltf();
+render();
 </script>
 </body>
 </html>
