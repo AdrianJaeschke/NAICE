@@ -2,18 +2,17 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>NAICE - Fix</title>
-    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@200;400&display=swap" rel="stylesheet">
+    <title>NAICE - Final Core</title>
     <style>
         :root { --neon: #BBFF03; }
-        body { background: #010103; margin: 0; overflow: hidden; font-family: "Barlow Condensed", sans-serif; color: #fff; }
-        #status { position: fixed; bottom: 10px; left: 10px; font-size: 10px; color: var(--neon); z-index: 100; background: rgba(0,0,0,0.5); padding: 5px; }
+        body { background: #010103; margin: 0; overflow: hidden; font-family: sans-serif; color: #fff; }
+        #hud { position: fixed; bottom: 10px; left: 10px; font-size: 10px; color: var(--neon); z-index: 100; background: rgba(0,0,0,0.6); padding: 5px; border: 1px solid rgba(187,255,3,0.2); }
         canvas { display: block; }
     </style>
 </head>
 <body>
 
-<div id="status">System: Initialisiere...</div>
+<div id="hud">SYSTEM: Initialisiere...</div>
 <canvas id="c"></canvas>
 
 <script>
@@ -22,44 +21,44 @@ const GITHUB_REPO = "NAICE";
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const statusEl = document.getElementById('status');
+const hud = document.getElementById('hud');
 
 let points = [], projects = [];
-let rotX = 0.3, rotY = 0.5, zoom = 1100;
+let rotX = 0.3, rotY = 0.5, zoom = 1200;
 
-function log(msg) { statusEl.innerText = msg; console.log(msg); }
+function log(msg) { hud.innerText = msg; console.log(msg); }
 
 // --- 1. GLTF & BIN LOADER ---
-async function loadGltfAndBin() {
-    const gltfUrl = 'textured.gltf';
+async function loadGltfCore() {
     try {
         log("Lade textured.gltf...");
-        const response = await fetch(gltfUrl);
-        if (!response.ok) throw new Error("gltf nicht gefunden");
-        const gltf = await response.json();
+        const res = await fetch('textured.gltf');
+        if (!res.ok) throw new Error("gltf nicht gefunden (404)");
+        const gltf = await res.json();
 
-        // Extrahiere den Pfad zur .bin Datei 
-        const binFileName = gltf.buffers[0].uri; 
-        log(`Lade Binärdaten: ${binFileName}...`);
+        // Pfad zur BIN aus der GLTF lesen
+        const binPath = gltf.buffers[0].uri; 
+        log(`Lade Binärdaten: ${binPath}...`);
         
-        const binRes = await fetch(binFileName);
-        if (!binRes.ok) throw new Error(`${binFileName} nicht im selben Ordner gefunden! (404)`);
+        const binRes = await fetch(binPath);
+        if (!binRes.ok) throw new Error(`${binPath} fehlt im Verzeichnis!`);
         const binData = await binRes.arrayBuffer();
 
-        // Zugriff auf Accessor 1 (Positionen) 
+        // Accessor 1 (Positionen), BufferView 1, Stride 32 (aus deiner Datei)
         const acc = gltf.accessors[1];
         const bv = gltf.bufferViews[acc.bufferView];
         const offset = (bv.byteOffset || 0) + (acc.byteOffset || 0);
-        const stride = bv.byteStride || 12; // In deiner Datei 32 
+        const stride = bv.byteStride || 32; 
         const dv = new DataView(binData);
 
         for (let i = 0; i < acc.count; i++) {
             const start = offset + (i * stride);
+            // Massiver Scale (800), damit es zwischen den Projekten sichtbar ist
             points.push({
                 x: dv.getFloat32(start, true) * 800,
                 y: dv.getFloat32(start + 4, true) * -800,
                 z: dv.getFloat32(start + 8, true) * 800,
-                r: 187, g: 255, b: 3, a: 0.4
+                r: 187, g: 255, b: 3, a: 0.5
             });
         }
         log("Kern geladen: " + points.length + " Punkte.");
@@ -68,24 +67,21 @@ async function loadGltfAndBin() {
     }
 }
 
-// --- 2. GITHUB API MIT PROTECTION ---
+// --- 2. PORTFOLIO LOADER (Mit Rate-Limit Schutz) ---
 async function autoLoadPortfolio() {
     try {
         const res = await fetch(`https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/portfolio`);
-        if (res.status === 403) {
-            log("GitHub Rate Limit erreicht. Portfolio lädt später.");
-            return;
-        }
+        if (res.status === 403) return log("GitHub Limit erreicht (403).");
+        
         const contents = await res.json();
-        if (!Array.isArray(contents)) return; // Fix für "filter is not a function"
+        if (!Array.isArray(contents)) return; // Verhindert .filter Error 
 
-        log("Portfolio Daten empfangen.");
-        // Hier käme deine restliche Logik für die Projekt-Ordner...
-    } catch (e) {
-        console.error("API Error", e);
-    }
+        log("Portfolio-Daten empfangen.");
+        // Hier folgen deine weiteren Projekt-Verarbeitungen...
+    } catch (e) { console.error(e); }
 }
 
+// --- 3. RENDERING ---
 function render() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -94,14 +90,15 @@ function render() {
 
     const cX = canvas.width / 2, cY = canvas.height / 2;
     rotY += 0.003;
-    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
-    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+    const cY_r = Math.cos(rotY), sY_r = Math.sin(rotY);
+    const cX_r = Math.cos(rotX), sX_r = Math.sin(rotX);
 
+    // Zeichne Modell-Punkte
     points.forEach(p => {
-        let x1 = p.x * cosY + p.z * sinY;
-        let z1 = p.z * cosY - p.x * sinY;
-        let y2 = p.y * cosX - z1 * sinX;
-        let z2 = z1 * cosX + p.y * sinX;
+        let x1 = p.x * cY_r + p.z * sY_r;
+        let z1 = p.z * cY_r - p.x * sY_r;
+        let y2 = p.y * cX_r - z1 * sX_r;
+        let z2 = z1 * cX_r + p.y * sX_r;
 
         const s = zoom / (zoom + z2);
         if (z2 > -zoom) {
@@ -109,11 +106,12 @@ function render() {
             ctx.fillRect(cX + x1 * s, cY + y2 * s, 2 * s, 2 * s);
         }
     });
+
     requestAnimationFrame(render);
 }
 
 window.onload = () => {
-    loadGltfAndBin();
+    loadGltfCore();
     autoLoadPortfolio();
     render();
 };
