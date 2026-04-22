@@ -2,80 +2,117 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>NAICE - 3D Core Fix</title>
+    <title>NAICE - 3D Core Portfolio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@200;400&family=Turret+Road:wght@200;700&display=swap" rel="stylesheet">
     <style>
-        body { background: #010103; margin: 0; overflow: hidden; color: #BBFF03; font-family: sans-serif; }
-        #status { position: fixed; top: 10px; left: 10px; font-size: 12px; z-index: 10; background: rgba(0,0,0,0.5); padding: 5px; }
-        canvas { display: block; }
+        :root { --neon: #BBFF03; }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#010103;overflow:hidden;font-family: "Barlow Condensed", sans-serif; color:#fff}
+        #nav-bar { position: absolute; top: 20px; left: 20px; z-index: 1000; background: rgba(0,0,0,0.6); padding: 10px; border: 1px solid var(--neon); backdrop-filter: blur(10px); }
+        #debug-log { position: fixed; bottom: 10px; left: 10px; font-family: monospace; font-size: 10px; color: var(--neon); z-index: 9999; pointer-events: none; background: rgba(0,0,0,0.5); padding: 5px; }
+        canvas { display: block; cursor: crosshair; }
     </style>
 </head>
 <body>
 
-<div id="status">Status: Initialisierung...</div>
+<div id="debug-log">System: Initialisiere...</div>
+<div id="nav-bar">
+    <img src="assets/naice.png" alt="naice" style="height:30px; filter: drop-shadow(0 0 5px var(--neon));">
+    <span style="margin-left:10px; color:var(--neon); letter-spacing: 2px;">3D CORE ENGINE</span>
+</div>
+
 <canvas id="c"></canvas>
 
 <script>
+// --- KONFIGURATION ---
+const GITHUB_USER = "AdrianJaeschke";
+const GITHUB_REPO = "NAICE";
+const FILE_NAME = "textured.gltf";
+
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const statusEl = document.getElementById('status');
+const logEl = document.getElementById('debug-log');
 
-let points = [];
-let rotY = 0, rotX = 0.4, zoom = 1200;
+let points = [], projects = [];
+let rotX = 0.3, rotY = 0.5, zoom = 1100;
+let mouse = { x: 0, y: 0 };
 
-async function loadGltf() {
-    const url = 'textured.gltf';
-    statusEl.innerText = "Status: Lade " + url + "...";
+function log(msg, isError = false) {
+    console.log(msg);
+    logEl.innerText = msg;
+    logEl.style.color = isError ? "#ff4444" : "#BBFF03";
+}
+
+// --- 1. DER ULTIMATIVE GLTF LOADER ---
+async function loadGltfCore() {
+    // Wir versuchen erst die lokale Datei, dann die GitHub Raw URL
+    const urls = [
+        FILE_NAME, 
+        `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/${FILE_NAME}`
+    ];
+
+    let response;
+    for (let url of urls) {
+        try {
+            log(`Versuche Download: ${url}...`);
+            response = await fetch(url);
+            if (response.ok) break;
+        } catch (e) { continue; }
+    }
+
+    if (!response || !response.ok) {
+        log("CONNECTION ERROR: Datei nicht gefunden. Prüfe GitHub Pfad!", true);
+        return;
+    }
 
     try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error("Datei nicht gefunden. Server gestartet? Pfad korrekt?");
-        
         const gltf = await response.json();
-        
-        // Suche den Buffer (Meistens die .bin Datei)
-        const bufferInfo = gltf.buffers[0];
-        let binUrl = bufferInfo.uri;
-        
-        // Falls die URI ein relativer Pfad zur .bin ist:
-        if (!binUrl.startsWith('data:')) {
-            binUrl = url.replace('textured.gltf', binUrl);
+        log("GLTF JSON parsiert. Extrahiere Buffer...");
+
+        const bufferUri = gltf.buffers[0].uri;
+        let binData;
+
+        if (bufferUri.startsWith('data:')) {
+            // Base64 Extraktion
+            const base64 = bufferUri.split(',')[1];
+            const binStr = atob(base64);
+            const len = binStr.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
+            binData = bytes.buffer;
+        } else {
+            // Externe .bin Datei laden
+            const binUrl = bufferUri; 
+            log(`Lade externe Binärdaten: ${binUrl}...`);
+            const binRes = await fetch(binUrl);
+            binData = await binRes.arrayBuffer();
         }
 
-        statusEl.innerText = "Status: Lade Binärdaten (" + binUrl + ")...";
-        const binRes = await fetch(binUrl);
-        if (!binRes.ok) throw new Error("Die zugehörige .bin Datei wurde nicht gefunden!");
-        const binData = await binRes.arrayBuffer();
-
-        // DEIN MODELL: Accessor 1 (Positionen), BufferView 1, Stride 32
+        // Accessor 1 (Positionen), BufferView 1 (Stride 32)
         const acc = gltf.accessors[1];
         const bv = gltf.bufferViews[acc.bufferView];
         const offset = (bv.byteOffset || 0) + (acc.byteOffset || 0);
-        const stride = bv.byteStride || 12; // In deiner Datei 32
-        
+        const stride = bv.byteStride || 12;
         const dv = new DataView(binData);
-        
+
         for (let i = 0; i < acc.count; i++) {
             const start = offset + (i * stride);
-            
-            // X, Y, Z extrahieren und skalieren
             points.push({
-                x: dv.getFloat32(start, true) * 800,
-                y: dv.getFloat32(start + 4, true) * -800, // Y-Flip
-                z: dv.getFloat32(start + 8, true) * 800,
-                a: 0.5
+                x: dv.getFloat32(start, true) * 750,
+                y: dv.getFloat32(start + 4, true) * -750, // Y invertieren für Standard-3D
+                z: dv.getFloat32(start + 8, true) * 750,
+                r: 187, g: 255, b: 3, a: 0.45, size: 4
             });
         }
-
-        statusEl.innerText = "Status: " + points.length + " Punkte geladen. Rendering läuft.";
-        statusEl.style.color = "#BBFF03";
+        log(`CORE GELADEN: ${points.length} Punkte aktiv.`);
 
     } catch (e) {
-        statusEl.innerText = "ERROR: " + e.message;
-        statusEl.style.color = "#ff4444";
+        log("PARSING ERROR: " + e.message, true);
         console.error(e);
     }
 }
 
+// --- 2. RENDER ENGINE ---
 function render() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -85,37 +122,47 @@ function render() {
     const cX = canvas.width / 2;
     const cY = canvas.height / 2;
 
-    rotY += 0.005;
+    rotY += 0.003; // Langsame Rotation des Zentrums
     const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
     const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
 
-    // Zeichne Punkte
-    ctx.fillStyle = 'rgba(187, 255, 3, 0.5)';
-    for (let i = 0; i < points.length; i++) {
-        const p = points[i];
-
-        // 3D Rotation
+    // Zeichne Punkte mit einfacher Tiefensortierung (Z-Buffer Simulation)
+    const drawList = points.map(p => {
+        // Rotation um Y
         let x1 = p.x * cosY + p.z * sinY;
         let z1 = p.z * cosY - p.x * sinY;
+        // Rotation um X
         let y2 = p.y * cosX - z1 * sinX;
         let z2 = z1 * cosX + p.y * sinX;
 
         const s = zoom / (zoom + z2);
-        if (z2 > -zoom) {
-            const px = cX + x1 * s;
-            const py = cY + y2 * s;
-            
-            // Gaussian Splat Effekt (einfachere Version für Speed)
-            ctx.globalAlpha = p.a * s;
-            ctx.fillRect(px, py, 3 * s, 3 * s);
-        }
-    }
+        return {
+            px: cX + x1 * s,
+            py: cY + y2 * s,
+            pz: z2,
+            size: p.size * s,
+            alpha: p.a * s,
+            color: `rgba(${p.r},${p.g},${p.b},`
+        };
+    }).filter(p => p.pz > -zoom).sort((a, b) => b.pz - a.pz);
+
+    drawList.forEach(p => {
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color + p.alpha + ")";
+        ctx.fillRect(p.px, p.py, p.size, p.size);
+    });
+
     ctx.globalAlpha = 1;
     requestAnimationFrame(render);
 }
 
-loadGltf();
-render();
+// Start
+window.onload = () => {
+    loadGltfCore();
+    render();
+};
+
+window.onmousemove = e => { mouse.x = e.clientX; mouse.y = e.clientY; };
 </script>
 </body>
 </html>
