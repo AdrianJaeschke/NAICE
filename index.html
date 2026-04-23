@@ -2,38 +2,32 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>NAICE - 3D Core Portfolio</title>
-    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@200;300;400&family=Turret+Road:wght@200;400;700&display=swap" rel="stylesheet">
+    <title>NAICE - Final Stable Core</title>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@200;400&family=Turret+Road:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root { --neon: #BBFF03; }
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#010103;overflow:hidden;font-family: "Barlow Condensed", sans-serif; color:#fff}
-        
         #nav-bar { 
             position: absolute; top: 20px; left: 20px; z-index: 1000; 
             display: flex; align-items: center; gap: 15px; 
             background: rgba(0,0,0,0.6); padding: 10px; border: 1px solid rgba(187,255,3,0.3); backdrop-filter: blur(15px);
         }
-        
-        #status { position: fixed; top: 10px; right: 10px; font-size: 9px; color: var(--neon); font-family: monospace; opacity: 0.6; }
+        #status { position: fixed; top: 10px; right: 10px; font-size: 10px; color: var(--neon); font-family: monospace; z-index: 1000; }
         canvas { display: block; cursor: crosshair; }
     </style>
 </head>
 <body>
 
-<div id="status">CORE ENGINE: LOADING...</div>
-
+<div id="status">SYSTEM: BOOTING...</div>
 <div id="nav-bar">
-    <img id="logo" src="assets/naice.png" alt="naice" style="height:35px; filter: drop-shadow(0 0 5px var(--neon));" onerror="this.src='naice.png'">
-    <div style="letter-spacing: 5px; font-weight: 200; color: var(--neon); margin-left: 10px;">PORTFOLIO OS</div>
+    <img id="logo" src="assets/naice.png" alt="naice" style="height:35px; filter: drop-shadow(0 0 5px var(--neon));" onerror="this.src='naice.png'; this.onerror=null;">
+    <div style="letter-spacing: 5px; font-weight: 200; color: var(--neon); margin-left: 10px;">NAICE PORTFOLIO</div>
 </div>
 
 <canvas id="c"></canvas>
 
 <script>
-const GITHUB_USER = "AdrianJaeschke";
-const GITHUB_REPO = "NAICE";
-
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
@@ -42,11 +36,27 @@ let points = [], projects = [];
 let rotX = 0.3, rotY = 0.5, zoom = 1100;
 let mouse = { x: 0, y: 0 };
 
-// --- 1. CORE MODELL LADEN (Der Kopf im Zentrum) ---
+function log(msg) { statusEl.innerText = msg; console.log(msg); }
+
+// --- 1. ATMOSPHÄRE INITIALISIEREN ---
+function initAtmosphere() {
+    for(let i=0; i<1500; i++) {
+        const r = 800 + Math.random() * 1000;
+        const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 2 - 1);
+        points.push({ 
+            x: r*Math.sin(p)*Math.cos(t), y: r*Math.sin(p)*Math.sin(t), z: r*Math.cos(p),
+            r: 187, g: 255, b: 3, a: 0.1, size: 1.5, type: 'bg'
+        });
+    }
+}
+
+// --- 2. CORE MODELL LADEN ---
 async function loadCore() {
     try {
-        const response = await fetch('textured.gltf');
-        const gltf = await response.json();
+        log("Lade Core...");
+        const res = await fetch('textured.gltf');
+        if(!res.ok) throw new Error("404 textured.gltf");
+        const gltf = await res.json();
         const binRes = await fetch(gltf.buffers[0].uri);
         const binData = await binRes.arrayBuffer();
 
@@ -59,127 +69,109 @@ async function loadCore() {
         for (let i = 0; i < acc.count; i++) {
             const s = offset + (i * stride);
             points.push({
-                x: dv.getFloat32(s, true) * 380, // Kopfgröße optimiert
-                y: dv.getFloat32(s + 4, true) * -380,
-                z: dv.getFloat32(s + 8, true) * 380,
-                r: 187, g: 255, b: 3, a: 0.25, size: 2, type: 'core'
+                x: dv.getFloat32(s, true) * 350,
+                y: dv.getFloat32(s + 4, true) * -350,
+                z: dv.getFloat32(s + 8, true) * 350,
+                r: 187, g: 255, b: 3, a: 0.3, size: 2, type: 'core'
             });
         }
-        statusEl.innerText = "CORE ACTIVE";
-    } catch (e) { console.error("Core Error", e); }
+        log("Core aktiv.");
+    } catch (e) { log("Core Error: " + e.message); }
 }
 
-// --- 2. GITHUB PORTFOLIO LOGIK (Cases laden) ---
-async function autoLoadPortfolio() {
+// --- 3. PORTFOLIO LOGIK ---
+async function loadPortfolio() {
     try {
-        const response = await fetch(`https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/portfolio`);
-        if (response.status === 403) { statusEl.innerText = "API LIMIT REACHED"; return; }
-        const contents = await response.json();
-        const folders = contents.filter(item => item.type === 'dir');
+        log("Scanne Portfolio...");
+        const res = await fetch(`https://api.github.com/repos/AdrianJaeschke/NAICE/contents/portfolio`);
+        if (res.status === 403) { log("GitHub Limit (Warten...)"); return; }
+        const folders = await res.json();
+        
+        if(!Array.isArray(folders)) return;
 
-        for (let folder of folders) {
+        let angleIdx = 0;
+        for (let folder of folders.filter(f => f.type === 'dir')) {
             const fRes = await fetch(folder.url);
             const files = await fRes.json();
-            const images = files.filter(f => f.name.match(/\.(jpg|jpeg|png)$/i));
+            const imgFile = files.find(f => f.name.match(/\.(jpg|jpeg|png)$/i));
 
-            if (images.length > 0) {
+            if (imgFile) {
                 const img = new Image();
                 img.crossOrigin = "anonymous";
-                img.src = images[0].download_url;
-                await new Promise(r => { img.onload = r; img.onerror = r; });
+                img.src = imgFile.download_url;
+                await new Promise(r => img.onload = r);
 
-                projects.push({
+                const angle = (angleIdx / 4) * Math.PI * 2; // Annahme max 4-6 Cases für Radius
+                const proj = {
                     name: folder.name.toUpperCase(),
-                    cx: 0, cz: 0, focus: 0, img: img,
-                    angle: 0
-                });
+                    cx: Math.sin(angle) * 500,
+                    cz: Math.cos(angle) * 500,
+                    focus: 0, img: img, angle: angle
+                };
+                projects.push(proj);
+                extractPoints(proj);
+                angleIdx++;
             }
         }
-
-        // Cases im Kreis anordnen
-        projects.forEach((p, i) => {
-            const angle = (i / projects.length) * Math.PI * 2;
-            p.angle = angle;
-            p.cx = Math.sin(angle) * 550; // Radius um den Kopf
-            p.cz = Math.cos(angle) * 550;
-            extractProjectPoints(p);
-        });
-    } catch (e) { console.error("Portfolio Error", e); }
+        log("Portfolio geladen.");
+    } catch (e) { console.log(e); }
 }
 
-// --- 3. BILD-PUNKTE EXTRAHIEREN (Morphing Points) ---
-function extractProjectPoints(proj) {
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = tempCanvas.height = 64;
-    const tCtx = tempCanvas.getContext('2d');
+function extractPoints(proj) {
+    const tempC = document.createElement('canvas');
+    tempC.width = tempC.height = 64;
+    const tCtx = tempC.getContext('2d');
     tCtx.drawImage(proj.img, 0, 0, 64, 64);
     const d = tCtx.getImageData(0,0,64,64).data;
 
-    for(let i=0; i<600; i++) {
+    for(let i=0; i<400; i++) {
         const u = Math.random(), v = Math.random();
         const idx = (Math.floor(v*63)*64 + Math.floor(u*63))*4;
         points.push({
             parent: proj, type: 'case-point',
-            rx: (Math.random()-0.5)*150, ry: (Math.random()-0.5)*150, rz: (Math.random()-0.5)*150,
-            tx: (u-0.5)*180, ty: (v-0.5)*180,
-            r: d[idx], g: d[idx+1], b: d[idx+2], a: 0.6, size: 2.5
+            rx: (Math.random()-0.5)*120, ry: (Math.random()-0.5)*120, rz: (Math.random()-0.5)*120,
+            tx: (u-0.5)*150, ty: (v-0.5)*150,
+            r: d[idx], g: d[idx+1], b: d[idx+2], a: 0.6, size: 2
         });
     }
 }
 
-// --- 4. HINTERGRUND ATMOSPHÄRE ---
-function initAtmosphere() {
-    for(let i=0; i<1500; i++) {
-        const r = 800 + Math.random() * 1000;
-        const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 2 - 1);
-        points.push({ 
-            x: r*Math.sin(p)*Math.cos(t), y: r*Math.sin(p)*Math.sin(t), z: r*Math.cos(p),
-            r: 187, g: 255, b: 3, a: 0.05, size: 1.2, isBg: true 
-        });
-    }
-}
-
-// --- 5. RENDER ENGINE ---
+// --- 4. RENDER LOOP ---
 function render() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.fillStyle = '#010103';
     ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    const cX = canvas.width / 2, cY = canvas.height / 2;
-    rotY += 0.0025;
-    const cYr = Math.cos(rotY), sYr = Math.sin(rotY), cXr = Math.cos(rotX), sXr = Math.sin(rotX);
+    const cx = canvas.width/2, cy = canvas.height/2;
+    rotY += 0.002;
+    const cyR = Math.cos(rotY), syR = Math.sin(rotY), cxR = Math.cos(rotX), sxR = Math.sin(rotX);
 
-    // Hover-Logik für Cases
+    // Hover logic
     projects.forEach(p => {
-        let x1 = p.cx*cYr+p.cz*sYr, z1 = p.cz*cYr-p.cx*sYr, y2 = -z1*sXr, z2 = z1*cXr;
+        let x1 = p.cx*cyR + p.cz*syR, z1 = p.cz*cyR - p.cx*syR, y2 = -z1*sxR, z2 = z1*cxR;
         const s = zoom/(zoom+z2);
-        const d = Math.sqrt((cX+x1*s-mouse.x)**2+(cY+y2*s-mouse.y)**2);
-        p.focus = (d < 80*s) ? Math.min(1, p.focus+0.08) : Math.max(0, p.focus-0.08);
+        const dist = Math.sqrt((cx+x1*s - mouse.x)**2 + (cy+y2*s - mouse.y)**2);
+        p.focus = (dist < 70) ? Math.min(1, p.focus + 0.1) : Math.max(0, p.focus - 0.1);
     });
 
-    // Punkte berechnen & zeichnen
+    // Draw Points
     const drawList = points.map(p => {
         let x, y, z;
-        if(p.type === 'core' || p.isBg) {
+        if(p.type === 'core' || p.type === 'bg') {
             x = p.x; y = p.y; z = p.z;
-        } else if(p.type === 'case-point') {
+        } else {
             const f = p.parent.focus;
-            // Morphing zwischen Wolke und flachem Bild
-            const lx = p.rx*(1-f) + p.tx*f;
-            const ly = p.ry*(1-f) + p.ty*f;
-            const lz = p.rz*(1-f);
-            // Rotation des Case-Systems mit dem Haupt-Orbit
+            const lx = p.rx*(1-f) + p.tx*f, ly = p.ry*(1-f) + p.ty*f, lz = p.rz*(1-f);
             x = p.parent.cx + (lx*Math.cos(-p.parent.angle) + lz*Math.sin(-p.parent.angle));
             y = ly;
             z = p.parent.cz + (lz*Math.cos(-p.parent.angle) - lx*Math.sin(-p.parent.angle));
         }
 
-        let x1 = x*cYr + z*sYr, z1 = z*cYr - x*sYr, y2 = y*cXr - z1*sXr, z2 = z1*cXr + y*sX_r;
+        let x1 = x*cyR + z*syR, z1 = z*cyR - x*syR, y2 = y*cxR - z1*sxR, z2 = z1*cxR + y*sxR;
         const s = zoom / (zoom + z2);
-        if(z2 < -zoom) return null;
-
-        return { px: cX+x1*s, py: cY+y2*s, pz: z2, s: p.size*s, col: `rgba(${p.r},${p.g},${p.b},${p.a*s})` };
+        if(z2 < -zoom + 100) return null;
+        return { px: cx+x1*s, py: cy+y2*s, pz: z2, s: p.size*s, col: `rgba(${p.r},${p.g},${p.b},${p.a*s})` };
     }).filter(p => p !== null).sort((a,b) => b.pz - a.pz);
 
     drawList.forEach(p => {
@@ -187,25 +179,19 @@ function render() {
         ctx.fillRect(p.px, p.py, p.s, p.s);
     });
 
-    // Case Texte und Vorschaubilder
+    // Draw Labels
     projects.forEach(p => {
-        let x1 = p.cx*cYr+p.cz*sYr, z1 = p.cz*cYr-p.cx*sYr, y2 = -z1*sXr, z2 = z1*cXr;
+        let x1 = p.cx*cyR + p.cz*syR, z1 = p.cz*cyR - p.cx*syR, y2 = -z1*sxR, z2 = z1*cxR;
         const s = zoom/(zoom+z2);
         if(z2 < -zoom) return;
-
         ctx.save();
-        ctx.translate(cX+x1*s, cY+y2*s);
-        ctx.globalAlpha = 0.2 + p.focus * 0.8;
-        
-        // Vorschaubild bei Hover
-        if(p.focus > 0.1) {
-            ctx.drawImage(p.img, -50*s*p.focus, -110*s*p.focus, 100*s*p.focus, 100*s*p.focus);
-        }
-
+        ctx.translate(cx+x1*s, cy+y2*s);
+        ctx.globalAlpha = 0.3 + p.focus * 0.7;
         ctx.fillStyle = "var(--neon)";
-        ctx.font = `${12*s}px "Turret Road"`;
+        ctx.font = `${13*s}px "Turret Road"`;
         ctx.textAlign = "center";
-        ctx.fillText(p.name, 0, 20*s);
+        ctx.fillText(p.name, 0, 30*s);
+        if(p.focus > 0.1) ctx.drawImage(p.img, -40*s, -100*s, 80*s, 80*s);
         ctx.restore();
     });
 
@@ -215,10 +201,9 @@ function render() {
 window.onload = () => {
     initAtmosphere();
     loadCore();
-    autoLoadPortfolio();
+    loadPortfolio();
     render();
 };
-
 window.onmousemove = e => { mouse.x = e.clientX; mouse.y = e.clientY; };
 </script>
 </body>
