@@ -2,108 +2,108 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>NAICE - Final Core</title>
+    <title>NAICE - Final Fix</title>
     <style>
         :root { --neon: #BBFF03; }
         body { background: #010103; margin: 0; overflow: hidden; font-family: sans-serif; color: #fff; }
-        #hud { position: fixed; bottom: 10px; left: 10px; font-size: 10px; color: var(--neon); z-index: 100; background: rgba(0,0,0,0.6); padding: 5px; border: 1px solid rgba(187,255,3,0.2); }
+        #status-bar { position: fixed; top: 10px; right: 10px; font-size: 10px; color: var(--neon); background: rgba(0,0,0,0.8); padding: 5px; border: 1px solid var(--neon); z-index: 1000; }
+        #nav { position: absolute; top: 20px; left: 20px; z-index: 100; display: flex; align-items: center; }
+        #logo { height: 40px; filter: drop-shadow(0 0 5px var(--neon)); transition: opacity 0.5s; }
         canvas { display: block; }
     </style>
 </head>
 <body>
 
-<div id="hud">SYSTEM: Initialisiere...</div>
+<div id="status-bar">SYSTEM: BOOTING...</div>
+
+<div id="nav">
+    <img id="logo" src="assets/naice.png" alt="NAICE" onerror="this.style.display='none'; console.log('Logo Pfad falsch!')">
+    <span style="color:var(--neon); margin-left: 15px; letter-spacing: 3px; font-weight: bold;">3D CORE</span>
+</div>
+
 <canvas id="c"></canvas>
 
 <script>
-const GITHUB_USER = "AdrianJaeschke";
-const GITHUB_REPO = "NAICE";
-
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const hud = document.getElementById('hud');
+const status = document.getElementById('status-bar');
 
-let points = [], projects = [];
-let rotX = 0.3, rotY = 0.5, zoom = 1200;
+let points = [];
+let rotY = 0, rotX = 0.3, zoom = 1200;
 
-function log(msg) { hud.innerText = msg; console.log(msg); }
+// Hilfsfunktion für Logs
+function log(msg, err = false) {
+    status.innerText = msg;
+    if(err) status.style.color = "#ff4444";
+    console.log(msg);
+}
 
-// --- 1. GLTF & BIN LOADER ---
-async function loadGltfCore() {
+// 1. GLTF & BIN LOADER (Das Zentrum)
+async function loadCore() {
     try {
-        log("Lade textured.gltf...");
+        log("Lade Geometrie...");
         const res = await fetch('textured.gltf');
-        if (!res.ok) throw new Error("gltf nicht gefunden (404)");
+        if(!res.ok) throw new Error("textured.gltf nicht gefunden!");
         const gltf = await res.json();
 
-        // Pfad zur BIN aus der GLTF lesen
-        const binPath = gltf.buffers[0].uri; 
-        log(`Lade Binärdaten: ${binPath}...`);
-        
-        const binRes = await fetch(binPath);
-        if (!binRes.ok) throw new Error(`${binPath} fehlt im Verzeichnis!`);
+        // WICHTIG: Deine Datei braucht die .bin! [cite: 1]
+        const binUrl = gltf.buffers[0].uri;
+        const binRes = await fetch(binUrl);
+        if(!binRes.ok) throw new Error(`${binUrl} fehlt im Ordner!`);
         const binData = await binRes.arrayBuffer();
 
-        // Accessor 1 (Positionen), BufferView 1, Stride 32 (aus deiner Datei)
         const acc = gltf.accessors[1];
         const bv = gltf.bufferViews[acc.bufferView];
         const offset = (bv.byteOffset || 0) + (acc.byteOffset || 0);
-        const stride = bv.byteStride || 32; 
+        const stride = bv.byteStride || 32; // Laut deiner Datei 32 Bytes [cite: 1]
         const dv = new DataView(binData);
 
         for (let i = 0; i < acc.count; i++) {
-            const start = offset + (i * stride);
-            // Massiver Scale (800), damit es zwischen den Projekten sichtbar ist
+            const s = offset + (i * stride);
             points.push({
-                x: dv.getFloat32(start, true) * 800,
-                y: dv.getFloat32(start + 4, true) * -800,
-                z: dv.getFloat32(start + 8, true) * 800,
-                r: 187, g: 255, b: 3, a: 0.5
+                x: dv.getFloat32(s, true) * 800,
+                y: dv.getFloat32(s + 4, true) * -800,
+                z: dv.getFloat32(s + 8, true) * 800
             });
         }
-        log("Kern geladen: " + points.length + " Punkte.");
+        log(`CORE: ${points.length} PKT GELADEN`);
     } catch (e) {
-        log("FEHLER: " + e.message);
+        log("LOAD ERROR: " + e.message, true);
     }
 }
 
-// --- 2. PORTFOLIO LOADER (Mit Rate-Limit Schutz) ---
-async function autoLoadPortfolio() {
+// 2. PORTFOLIO (Sicherung gegen 403 Forbidden)
+async function loadPortfolio() {
     try {
-        const res = await fetch(`https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/portfolio`);
-        if (res.status === 403) return log("GitHub Limit erreicht (403).");
-        
-        const contents = await res.json();
-        if (!Array.isArray(contents)) return; // Verhindert .filter Error 
-
-        log("Portfolio-Daten empfangen.");
-        // Hier folgen deine weiteren Projekt-Verarbeitungen...
-    } catch (e) { console.error(e); }
+        const res = await fetch(`https://api.github.com/repos/AdrianJaeschke/NAICE/contents/portfolio`);
+        if(res.status === 403) return log("GITHUB API LIMIT (Warte 60min)");
+        const data = await res.json();
+        if(Array.isArray(data)) log("PORTFOLIO BEREIT");
+    } catch (e) { console.log("Portfolio Error gefangen."); }
 }
 
-// --- 3. RENDERING ---
+// 3. RENDER LOOP
 function render() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.fillStyle = '#010103';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    const cX = canvas.width / 2, cY = canvas.height / 2;
-    rotY += 0.003;
-    const cY_r = Math.cos(rotY), sY_r = Math.sin(rotY);
-    const cX_r = Math.cos(rotX), sX_r = Math.sin(rotX);
+    const cx = canvas.width/2, cy = canvas.height/2;
+    rotY += 0.005;
+    const cY = Math.cos(rotY), sY = Math.sin(rotY), cX = Math.cos(rotX), sX = Math.sin(rotX);
 
-    // Zeichne Modell-Punkte
+    ctx.fillStyle = '#BBFF03';
     points.forEach(p => {
-        let x1 = p.x * cY_r + p.z * sY_r;
-        let z1 = p.z * cY_r - p.x * sY_r;
-        let y2 = p.y * cX_r - z1 * sX_r;
-        let z2 = z1 * cX_r + p.y * sX_r;
+        let x1 = p.x * cY + p.z * sY;
+        let z1 = p.z * cY - p.x * sY;
+        let y2 = p.y * cX - z1 * sX;
+        let z2 = z1 * cX + p.y * sX;
 
         const s = zoom / (zoom + z2);
-        if (z2 > -zoom) {
-            ctx.fillStyle = `rgba(${p.r},${p.g},${p.b},${p.a * s})`;
-            ctx.fillRect(cX + x1 * s, cY + y2 * s, 2 * s, 2 * s);
+        if(z2 > -zoom) {
+            ctx.globalAlpha = 0.4 * s;
+            ctx.fillRect(cx + x1 * s, cy + y2 * s, 2 * s, 2 * s);
         }
     });
 
@@ -111,8 +111,8 @@ function render() {
 }
 
 window.onload = () => {
-    loadGltfCore();
-    autoLoadPortfolio();
+    loadCore();
+    loadPortfolio();
     render();
 };
 </script>
