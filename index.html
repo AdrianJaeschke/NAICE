@@ -48,7 +48,7 @@ async function loadCore() {
 
         // WICHTIG: Deine Datei braucht die .bin! [cite: 1]
         const binUrl = gltf.buffers[0].uri;
-        const binRes = await fetch(binUrl);
+        const binRes = await fetch('./textured.bin');
         if(!binRes.ok) throw new Error(`${binUrl} fehlt im Ordner!`);
         const binData = await binRes.arrayBuffer();
 
