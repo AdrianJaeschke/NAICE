@@ -2,119 +2,147 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>NAICE - Final Fix</title>
+    <title>NAICE - 3D Core Portfolio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@200;400&family=Turret+Road:wght@200;700&display=swap" rel="stylesheet">
     <style>
         :root { --neon: #BBFF03; }
-        body { background: #010103; margin: 0; overflow: hidden; font-family: sans-serif; color: #fff; }
-        #status-bar { position: fixed; top: 10px; right: 10px; font-size: 10px; color: var(--neon); background: rgba(0,0,0,0.8); padding: 5px; border: 1px solid var(--neon); z-index: 1000; }
-        #nav { position: absolute; top: 20px; left: 20px; z-index: 100; display: flex; align-items: center; }
-        #logo { height: 40px; filter: drop-shadow(0 0 5px var(--neon)); transition: opacity 0.5s; }
-        canvas { display: block; }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#010103;overflow:hidden;font-family: "Barlow Condensed", sans-serif; color:#fff}
+        
+        #nav-bar { 
+            position: absolute; top: 20px; left: 20px; z-index: 1000; 
+            display: flex; align-items: center; gap: 15px; 
+            background: rgba(0,0,0,0.6); padding: 10px; border: 1px solid rgba(187,255,3,0.3); backdrop-filter: blur(15px);
+        }
+        
+        #status-info { position: fixed; top: 10px; right: 10px; font-size: 9px; color: var(--neon); font-family: monospace; opacity: 0.5; }
+        canvas { display: block; cursor: crosshair; }
     </style>
 </head>
 <body>
 
-<div id="status-bar">SYSTEM: BOOTING...</div>
+<div id="status-info">CORE ENGINE ACTIVE</div>
 
-<div id="nav">
-    <img id="logo" src="./assets/naice.png" alt="NAICE" onerror="this.style.display='none'; console.log('Logo Pfad falsch!')">
-    <span style="color:var(--neon); margin-left: 15px; letter-spacing: 3px; font-weight: bold;">3D CORE</span>
+<div id="nav-bar">
+    <img id="naice-logo" src="assets/naice.png" alt="naice" style="height:35px; filter: drop-shadow(0 0 5px var(--neon));" onerror="this.src='naice.png'; this.onerror=null;">
+    <div style="letter-spacing: 5px; font-weight: 200; color: var(--neon); margin-left: 10px;">3D CORE</div>
 </div>
 
 <canvas id="c"></canvas>
 
 <script>
+const GITHUB_USER = "AdrianJaeschke";
+const GITHUB_REPO = "NAICE";
+
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const status = document.getElementById('status-bar');
+let points = [], projects = []; 
+let rotX = 0.3, rotY = 0.5, zoom = 1200;
+let mouse = { x: 0, y: 0 };
 
-let points = [];
-let rotY = 0, rotX = 0.3, zoom = 1200;
-
-// Hilfsfunktion für Logs
-function log(msg, err = false) {
-    status.innerText = msg;
-    if(err) status.style.color = "#ff4444";
-    console.log(msg);
-}
-
-// 1. GLTF & BIN LOADER (Das Zentrum)
+// --- 1. CORE MODELL LADEN (Verkleinert) ---
 async function loadCore() {
     try {
-        log("Lade Geometrie...");
-        const res = await fetch('./textured.gltf');
-        if(!res.ok) throw new Error("textured.gltf nicht gefunden!");
-        const gltf = await res.json();
-
-        // WICHTIG: Deine Datei braucht die .bin! [cite: 1]
-        const binUrl = gltf.buffers[0].uri;
-        const binRes = await fetch('./textured.bin');
-        if(!binRes.ok) throw new Error(`${binUrl} fehlt im Ordner!`);
+        const response = await fetch('textured.gltf');
+        const gltf = await response.json();
+        const binRes = await fetch(gltf.buffers[0].uri);
         const binData = await binRes.arrayBuffer();
 
         const acc = gltf.accessors[1];
         const bv = gltf.bufferViews[acc.bufferView];
         const offset = (bv.byteOffset || 0) + (acc.byteOffset || 0);
-        const stride = bv.byteStride || 32; // Laut deiner Datei 32 Bytes [cite: 1]
+        const stride = bv.byteStride || 32;
         const dv = new DataView(binData);
 
         for (let i = 0; i < acc.count; i++) {
             const s = offset + (i * stride);
             points.push({
-                x: dv.getFloat32(s, true) * 800,
-                y: dv.getFloat32(s + 4, true) * -800,
-                z: dv.getFloat32(s + 8, true) * 800
+                x: dv.getFloat32(s, true) * 450, // Kleiner skaliert (vorher 800)
+                y: dv.getFloat32(s + 4, true) * -450,
+                z: dv.getFloat32(s + 8, true) * 450,
+                r: 187, g: 255, b: 3, a: 0.3, size: 2.5,
+                type: 'core'
             });
         }
-        log(`CORE: ${points.length} PKT GELADEN`);
-    } catch (e) {
-        log("LOAD ERROR: " + e.message, true);
+    } catch (e) { console.error("Core Error", e); }
+}
+
+// --- 2. ATMOSPHÄRE & CASES ---
+function initWorld() {
+    // Hintergrund-Punkte (Cloud)
+    for(let i=0; i<3000; i++) {
+        const r = 1000 + Math.random() * 1000;
+        const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 2 - 1);
+        points.push({ 
+            x: r*Math.sin(p)*Math.cos(t), y: r*Math.sin(p)*Math.sin(t), z: r*Math.cos(p),
+            r: 187, g: 255, b: 3, a: 0.1, size: 1.5, isBg: true 
+        });
     }
+
+    // Dummy Cases (da API oft 403 Forbidden ist)
+    const caseNames = ["PROJECT ALPHA", "DIGITAL ART", "CORE V2", "STUDIO"];
+    caseNames.forEach((name, i) => {
+        const angle = (i / caseNames.length) * Math.PI * 2;
+        projects.push({
+            name: name,
+            cx: Math.sin(angle) * 800,
+            cz: Math.cos(angle) * 800,
+            focus: 0
+        });
+    });
 }
 
-// 2. PORTFOLIO (Sicherung gegen 403 Forbidden)
-async function loadPortfolio() {
-    try {
-        const res = await fetch(`https://api.github.com/repos/AdrianJaeschke/NAICE/contents/portfolio`);
-        if(res.status === 403) return log("GITHUB API LIMIT (Warte 60min)");
-        const data = await res.json();
-        if(Array.isArray(data)) log("PORTFOLIO BEREIT");
-    } catch (e) { console.log("Portfolio Error gefangen."); }
-}
-
-// 3. RENDER LOOP
+// --- 3. RENDER ENGINE ---
 function render() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.fillStyle = '#010103';
     ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    const cx = canvas.width/2, cy = canvas.height/2;
-    rotY += 0.005;
-    const cY = Math.cos(rotY), sY = Math.sin(rotY), cX = Math.cos(rotX), sX = Math.sin(rotX);
+    const cX = canvas.width / 2, cY = canvas.height / 2;
+    rotY += 0.002;
 
-    ctx.fillStyle = '#BBFF03';
-    points.forEach(p => {
-        let x1 = p.x * cY + p.z * sY;
-        let z1 = p.z * cY - p.x * sY;
-        let y2 = p.y * cX - z1 * sX;
-        let z2 = z1 * cX + p.y * sX;
+    const cY_r = Math.cos(rotY), sY_r = Math.sin(rotY), cX_r = Math.cos(rotX), sX_r = Math.sin(rotX);
 
-        const s = zoom / (zoom + z2);
-        if(z2 > -zoom) {
-            ctx.globalAlpha = 0.4 * s;
-            ctx.fillRect(cx + x1 * s, cy + y2 * s, 2 * s, 2 * s);
-        }
+    // Projekte Logik
+    projects.forEach(p => {
+        let x1 = p.cx*cY_r+p.cz*sY_r, z1 = p.cz*cY_r-p.cx*sY_r, y2 = -z1*sX_r, z2 = z1*cX_r;
+        const s = zoom/(zoom+z2);
+        const dx = cX+x1*s - mouse.x, dy = cY+y2*s - mouse.y;
+        p.focus = (Math.sqrt(dx*dx+dy*dy) < 100) ? Math.min(1, p.focus+0.1) : Math.max(0, p.focus-0.1);
+        
+        // Zeichne Label
+        ctx.save(); ctx.translate(cX+x1*s, cY+y2*s);
+        ctx.globalAlpha = 0.3 + p.focus * 0.7;
+        ctx.fillStyle = "var(--neon)";
+        ctx.font = `${14*s}px Turret Road`; ctx.textAlign = "center";
+        ctx.fillText(p.name, 0, 40*s);
+        ctx.restore();
+    });
+
+    // Punkte Zeichnen
+    const drawList = points.map(p => {
+        let x1=p.x*cY_r+p.z*sY_r, z1=p.z*cY_r-p.x*sY_r, y2=p.y*cX_r-z1*sX_r, z2=z1*cX_r+p.y*sX_r;
+        const s=zoom/(zoom+z2);
+        return {px:cX+x1*s, py:cY+y2*s, pz:z2, size:p.size*s, a:p.a*s, color:`rgba(${p.r},${p.g},${p.b},`};
+    }).filter(p=>p.pz>-zoom).sort((a,b)=>b.pz-a.pz);
+
+    drawList.forEach(p => {
+        ctx.globalAlpha = p.a;
+        ctx.fillStyle = p.color + p.a + ")";
+        ctx.fillRect(p.px, p.py, p.size, p.size);
     });
 
     requestAnimationFrame(render);
 }
 
 window.onload = () => {
+    initWorld();
     loadCore();
-    loadPortfolio();
     render();
 };
+
+window.onmousemove = e => { mouse.x = e.clientX; mouse.y = e.clientY; };
 </script>
 </body>
 </html>
