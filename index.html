@@ -5,17 +5,22 @@
     <title>NAICE - 3D Core Portfolio</title>
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@200;400&family=Turret+Road:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        :root { --neon: #BBFF03; }
+        :root { --neon: #BBFF03; --error: #FF0044; }
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#010103;overflow:hidden;font-family: "Barlow Condensed", sans-serif; color:#fff}
         
-        /* UI */
         #nav-bar { position: absolute; top: 20px; left: 20px; z-index: 1000; display: flex; align-items: center; gap: 15px; background: rgba(0,0,0,0.6); padding: 10px; border: 1px solid rgba(187,255,3,0.3); backdrop-filter: blur(15px); pointer-events: none; }
-        #status { position: fixed; top: 10px; right: 10px; font-size: 10px; color: var(--neon); font-family: monospace; z-index: 1000; }
-        canvas { display: block; cursor: grab; }
-        canvas:active { cursor: grabbing; }
+        
+        /* Status mit Error-Farbe */
+        #status { 
+            position: fixed; top: 15px; right: 20px; font-size: 11px; 
+            color: var(--neon); font-family: monospace; z-index: 1000; 
+            background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 3px;
+        }
+        #status.err { color: var(--error); border: 1px solid var(--error); }
 
-        /* Projekt Fenster Overlay */
+        canvas { display: block; cursor: grab; }
+        
         #project-window {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(1,1,3,0.98); z-index: 2000; display: none; opacity: 0; transition: opacity 0.5s ease;
@@ -24,13 +29,13 @@
         #close-btn { position: absolute; top: 30px; right: 40px; color: #fff; cursor: pointer; font-size: 14px; z-index: 2200; letter-spacing: 2px; }
         #project-title { position: absolute; top: 15%; left: 50%; transform: translateX(-50%); font-family: 'Turret Road'; font-size: 3.5rem; z-index: 2100; text-align: center; width: 90%; pointer-events: none; }
         #collage-container { position: relative; width: 100%; height: 100%; perspective: 1200px; }
-        .collage-img { position: absolute; width: 280px; transition: transform 0.2s ease-out; opacity: 0.7; transform: translate(-50%, -50%); }
-        .main-img { width: 550px !important; z-index: 2050 !important; opacity: 1 !important; }
+        .collage-img { position: absolute; width: 280px; transition: transform 0.2s ease-out; opacity: 0.7; transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,0.1); }
+        .main-img { width: 550px !important; z-index: 2050 !important; opacity: 1 !important; box-shadow: 0 0 50px rgba(0,0,0,1); }
     </style>
 </head>
 <body>
 
-<div id="status">SYSTEM: READY</div>
+<div id="status">INITIATING BOOT SEQUENCE...</div>
 <div id="nav-bar">
     <img id="logo" src="assets/naice.png" alt="naice" style="height:35px;" onerror="this.src='naice.png'">
     <div style="letter-spacing: 5px; font-weight: 200; color: var(--neon); margin-left: 10px;">NAICE PORTFOLIO</div>
@@ -46,24 +51,22 @@
 
 <script>
 const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
-const win = document.getElementById('project-window'), collage = document.getElementById('collage-container'), title = document.getElementById('project-title');
+const win = document.getElementById('project-window'), collage = document.getElementById('collage-container'), title = document.getElementById('project-title'), statusEl = document.getElementById('status');
 
 let points = [], projects = []; 
 let rotX = 0.3, rotY = 0.5, zoom = 1100, isDragging = false, isWindowOpen = false;
 let mouse = { x: 0, y: 0 }, lastMouse = { x: 0, y: 0 };
 
-// ATMOSPHÄRE & CORE LADEN (DEIN CODE)
-function initAtmosphere() {
-    for(let i=0; i<1500; i++) {
-        const r = 800 + Math.random() * 1000;
-        const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 2 - 1);
-        points.push({ x: r*Math.sin(p)*Math.cos(t), y: r*Math.sin(p)*Math.sin(t), z: r*Math.cos(p), r: 187, g: 255, b: 3, a: 0.1, size: 1.5, type: 'bg' });
-    }
+function setStatus(msg, isErr = false) {
+    statusEl.innerText = msg.toUpperCase();
+    if(isErr) statusEl.classList.add('err');
+    else statusEl.classList.remove('err');
 }
 
 async function loadCore() {
     try {
         const res = await fetch('textured.gltf');
+        if(!res.ok) throw new Error("File not found");
         const gltf = await res.json();
         const binRes = await fetch(gltf.buffers[0].uri);
         const binData = await binRes.arrayBuffer();
@@ -71,33 +74,69 @@ async function loadCore() {
         const offset = (bv.byteOffset || 0) + (acc.byteOffset || 0), stride = bv.byteStride || 32, dv = new DataView(binData);
         for (let i = 0; i < acc.count; i++) {
             const s = offset + (i * stride);
-            points.push({ x: dv.getFloat32(s, true) * 500, y: dv.getFloat32(s + 4, true) * -500, z: dv.getFloat32(s + 8, true) * 500, r: 187, g: 255, b: 3, a: 0.3, size: 2, type: 'core' });
+            points.push({ x: dv.getFloat32(s, true) * 500, y: dv.getFloat32(s + 4, true) * -500, z: dv.getFloat32(s + 8, true) * 500, r: 187, g: 255, b: 3, a: 0.3, size: 1.8, type: 'core' });
         }
-    } catch (e) {}
+        setStatus("CORE MODEL: LOADED");
+    } catch (e) { 
+        setStatus("CORE ERROR: TEXTURED.GLTF NOT ACCESSIBLE", true); 
+    }
 }
 
 async function loadPortfolio() {
+    setStatus("SYNCING WITH REPOSITORY...");
     try {
         const res = await fetch(`https://api.github.com/repos/AdrianJaeschke/NAICE/contents/portfolio`);
+        
+        if (res.status === 403) {
+            setStatus("GITHUB ERROR: RATE LIMIT EXCEEDED", true);
+            return;
+        }
+        if (!res.ok) {
+            setStatus("GITHUB ERROR: PORTFOLIO DIR NOT FOUND", true);
+            return;
+        }
+
         const folders = (await res.json()).filter(f => f.type === 'dir');
+        if(folders.length === 0) setStatus("SYSTEM: NO PROJECTS FOUND IN /PORTFOLIO", true);
+        
         for (let [idx, folder] of folders.entries()) {
-            const fRes = await fetch(folder.url), files = await fRes.json();
-            const imgFiles = files.filter(f => f.name.match(/\.(jpg|jpeg|png)$/i));
-            const anyTxt = files.find(f => f.name.endsWith('.txt'));
-            let dName = folder.name.toUpperCase();
-            if (anyTxt) {
-                const tRes = await fetch(anyTxt.download_url);
-                dName = (await tRes.text()).split('\n')[0].trim();
-            }
-            if (imgFiles.length > 0) {
-                const img = new Image(); img.crossOrigin = "anonymous"; img.src = imgFiles[0].download_url;
-                await new Promise(r => img.onload = r);
-                const angle = (idx / folders.length) * Math.PI * 2;
-                const proj = { name: dName, cx: Math.sin(angle)*450, cz: Math.cos(angle)*450, focus: 0, img: img, angle: angle, allImages: imgFiles };
-                projects.push(proj); extractPoints(proj);
+            setStatus(`LOADING CASE: ${folder.name}`);
+            try {
+                const fRes = await fetch(folder.url), files = await fRes.json();
+                const imgFiles = files.filter(f => f.name.match(/\.(jpg|jpeg|png)$/i));
+                const anyTxt = files.find(f => f.name.toLowerCase().endsWith('.txt'));
+
+                let dName = folder.name.toUpperCase();
+                if (anyTxt) {
+                    const tRes = await fetch(anyTxt.download_url);
+                    const t = await tRes.text();
+                    if(t.trim()) dName = t.split('\n')[0].trim();
+                }
+
+                if (imgFiles.length > 0) {
+                    const img = new Image(); 
+                    img.crossOrigin = "anonymous"; 
+                    img.src = imgFiles[0].download_url;
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = () => reject("Img Load Fail");
+                    });
+                    
+                    const angle = (idx / folders.length) * Math.PI * 2;
+                    const proj = { name: dName, cx: Math.sin(angle)*500, cz: Math.cos(angle)*500, focus: 0, img: img, angle: angle, allImages: imgFiles };
+                    projects.push(proj); 
+                    extractPoints(proj);
+                } else {
+                    console.warn(`No images in ${folder.name}`);
+                }
+            } catch(err) { 
+                console.error("Project Skip:", folder.name, err); 
             }
         }
-    } catch (e) {}
+        setStatus(`SYSTEM ONLINE | ${projects.length} PROJECTS SYNCED`);
+    } catch (e) { 
+        setStatus("CONNECTION ERROR: CHECK NETWORK", true); 
+    }
 }
 
 function extractPoints(proj) {
@@ -106,11 +145,11 @@ function extractPoints(proj) {
     const d = tCtx.getImageData(0,0,64,64).data;
     for(let i=0; i<400; i++) {
         const u = Math.random(), v = Math.random(), idx = (Math.floor(v*63)*64 + Math.floor(u*63))*4;
-        points.push({ parent: proj, type: 'case-point', rx: (Math.random()-0.5)*120, ry: (Math.random()-0.5)*120, rz: (Math.random()-0.5)*120, tx: (u-0.5)*150, ty: (v-0.5)*150, r: d[idx], g: d[idx+1], b: d[idx+2], a: 0.6, size: 2 });
+        points.push({ parent: proj, type: 'case-point', rx: (Math.random()-0.5)*120, ry: (Math.random()-0.5)*120, rz: (Math.random()-0.5)*120, tx: (u-0.5)*160, ty: (v-0.5)*160, r: d[idx], g: d[idx+1], b: d[idx+2], a: 0.6, size: 2 });
     }
 }
 
-// STEUERUNG
+// INPUTS
 canvas.onmousedown = (e) => { isDragging = true; lastMouse = { x: e.clientX, y: e.clientY }; };
 window.onmouseup = () => { isDragging = false; };
 window.onmousemove = (e) => {
@@ -123,8 +162,8 @@ window.onmousemove = (e) => {
     if (isWindowOpen) {
         const dx = (e.clientX - window.innerWidth/2)/(window.innerWidth/2), dy = (e.clientY - window.innerHeight/2)/(window.innerHeight/2);
         document.querySelectorAll('.collage-img').forEach((el, i) => {
-            const depth = el.classList.contains('main-img') ? 25 : (i + 1) * 45;
-            el.style.transform = `translate(${-50 + dx*depth}%, ${-50 + dy*depth}%) rotateY(${dx*15}deg) rotateX(${-dy*15}deg)`;
+            const depth = el.classList.contains('main-img') ? 30 : (i + 1) * 50;
+            el.style.transform = `translate(${-50 + dx*depth}%, ${-50 + dy*depth}%) rotateY(${dx*10}deg) rotateX(${-dy*10}deg)`;
         });
     }
 };
@@ -150,7 +189,6 @@ function openProject(proj) {
 function closeProject() { isWindowOpen = false; win.classList.remove('active'); }
 window.onkeydown = (e) => { if(e.key === "Escape") closeProject(); };
 
-// RENDER LOOP
 function render() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     ctx.fillStyle = '#010103'; ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -168,7 +206,7 @@ function render() {
 
     const drawList = points.map(p => {
         let x, y, z;
-        if(p.type === 'core' || p.type === 'bg') { x = p.x; y = p.y; z = p.z; }
+        if(p.type === 'core') { x = p.x; y = p.y; z = p.z; }
         else {
             const f = p.parent.focus;
             const lx = p.rx*(1-f) + p.tx*f, ly = p.ry*(1-f) + p.ty*f, lz = p.rz*(1-f);
@@ -179,7 +217,7 @@ function render() {
         const s = zoom / (zoom + z2);
         if(z2 < -zoom + 50) return null;
         return { px: cx+x1*s, py: cy+y2*s, pz: z2, s: p.size*s, col: `rgba(${p.r},${p.g},${p.b},${p.a*s})` };
-    }).filter(p => p !== null).sort((a,b) => b.pz - a.pz);
+    }).filter(p => p).sort((a,b) => b.pz - a.pz);
 
     drawList.forEach(p => { ctx.fillStyle = p.col; ctx.fillRect(p.px, p.py, p.s, p.s); });
 
@@ -190,15 +228,15 @@ function render() {
         ctx.save(); ctx.translate(cx+x1*s, cy+y2*s);
         ctx.globalAlpha = 0.4 + p.focus * 0.6;
         ctx.fillStyle = "#FFFFFF"; ctx.font = `${14*s}px "Turret Road"`; ctx.textAlign = "center";
-        ctx.fillText(p.name, 0, 40*s);
-        if(p.focus > 0.1) ctx.drawImage(p.img, -50*s, -120*s, 100*s, 100*s);
+        ctx.fillText(p.name, 0, 45*s);
+        if(p.focus > 0.05) ctx.drawImage(p.img, -50*s, -120*s, 100*s, 100*s);
         ctx.restore();
     });
 
     requestAnimationFrame(render);
 }
 
-window.onload = () => { initAtmosphere(); loadCore(); loadPortfolio(); render(); };
+window.onload = () => { loadCore(); loadPortfolio(); render(); };
 </script>
 </body>
 </html>
