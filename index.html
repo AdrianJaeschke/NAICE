@@ -42,7 +42,7 @@ function log(msg, err = false) {
 async function loadCore() {
     try {
         log("Lade Geometrie...");
-        const res = await fetch('textured.gltf');
+        const res = await fetch('./textured.gltf');
         if(!res.ok) throw new Error("textured.gltf nicht gefunden!");
         const gltf = await res.json();
 
