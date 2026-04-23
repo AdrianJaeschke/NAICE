@@ -8,52 +8,23 @@
         :root { --neon: #BBFF03; }
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#010103;overflow:hidden;font-family: "Barlow Condensed", sans-serif; color:#fff}
-        
-        /* UI */
         #nav-bar { position: absolute; top: 20px; left: 20px; z-index: 1000; display: flex; align-items: center; gap: 15px; background: rgba(0,0,0,0.6); padding: 10px; border: 1px solid rgba(187,255,3,0.3); backdrop-filter: blur(15px); }
         #status { position: fixed; top: 10px; right: 10px; font-size: 10px; color: var(--neon); font-family: monospace; z-index: 1000; }
         canvas { display: block; cursor: grab; }
-        canvas:active { cursor: grabbing; }
-
-        /* Projekt Fenster (Keine Outline) */
-        #project-window {
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(1,1,3,0.98); z-index: 2000; 
-            display: none; opacity: 0; transition: opacity 0.5s ease;
-            overflow: hidden;
-        }
+        #project-window { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(1,1,3,0.98); z-index: 2000; display: none; opacity: 0; transition: opacity 0.5s ease; overflow: hidden; }
         #project-window.active { display: block; opacity: 1; pointer-events: all; }
-        
-        #close-btn { 
-            position: absolute; top: 30px; right: 40px; color: #fff; cursor: pointer; 
-            font-size: 14px; z-index: 2200; letter-spacing: 2px; opacity: 0.5; transition: 0.3s;
-        }
-        #close-btn:hover { opacity: 1; color: var(--neon); }
-
-        #project-title {
-            position: absolute; top: 15%; left: 50%; transform: translateX(-50%);
-            font-family: 'Turret Road', sans-serif; font-size: 3.5rem; font-weight: 700;
-            color: #fff; text-align: center; z-index: 2100; width: 90%; pointer-events: none;
-            text-shadow: 0 0 30px rgba(0,0,0,0.8);
-        }
-
+        #close-btn { position: absolute; top: 30px; right: 40px; color: #fff; cursor: pointer; font-size: 14px; z-index: 2200; letter-spacing: 2px; opacity: 0.5; }
+        #project-title { position: absolute; top: 15%; left: 50%; transform: translateX(-50%); font-family: 'Turret Road'; font-size: 3.5rem; font-weight: 700; color: #fff; text-align: center; z-index: 2100; width: 90%; pointer-events: none; }
         #collage-container { position: relative; width: 100%; height: 100%; perspective: 1200px; }
-        .collage-img { 
-            position: absolute; width: 280px; height: auto; 
-            transition: transform 0.2s ease-out; pointer-events: none; opacity: 0.7;
-            transform: translate(-50%, -50%);
-        }
-        .main-img { 
-            width: 550px !important; z-index: 2050 !important; opacity: 1 !important;
-            box-shadow: 0 0 50px rgba(0,0,0,1);
-        }
+        .collage-img { position: absolute; width: 280px; transition: transform 0.2s ease-out; pointer-events: none; opacity: 0.7; transform: translate(-50%, -50%); }
+        .main-img { width: 550px !important; z-index: 2050 !important; opacity: 1 !important; box-shadow: 0 0 50px rgba(0,0,0,1); }
     </style>
 </head>
 <body>
 
 <div id="status">SYSTEM: BOOTING...</div>
 <div id="nav-bar">
-    <img id="logo" src="assets/naice.png" alt="naice" style="height:35px; filter: drop-shadow(0 0 5px var(--neon));" onerror="this.src='naice.png'">
+    <img id="logo" src="assets/naice.png" alt="naice" style="height:35px;" onerror="this.src='naice.png'">
     <div style="letter-spacing: 5px; font-weight: 200; color: var(--neon); margin-left: 10px;">CORE // PORTFOLIO</div>
 </div>
 
@@ -73,7 +44,6 @@ let points = [], projects = [];
 let rotX = 0.3, rotY = 0.5, zoom = 1100, isDragging = false, isWindowOpen = false;
 let mouse = { x: 0, y: 0 }, lastMouse = { x: 0, y: 0 };
 
-// --- 1. CORE MODELL LADEN ---
 async function loadCore() {
     try {
         const res = await fetch('textured.gltf');
@@ -82,21 +52,14 @@ async function loadCore() {
         const binData = await binRes.arrayBuffer();
         const acc = gltf.accessors[1], bv = gltf.bufferViews[acc.bufferView];
         const offset = (bv.byteOffset || 0) + (acc.byteOffset || 0), stride = bv.byteStride || 32, dv = new DataView(binData);
-        
         for (let i = 0; i < acc.count; i++) {
             const s = offset + (i * stride);
-            points.push({ 
-                x: dv.getFloat32(s,true)*550, // Modellgröße
-                y: dv.getFloat32(s+4,true)*-550, 
-                z: dv.getFloat32(s+8,true)*550, 
-                r:187, g:255, b:3, a:0.3, size:2, type:'core'
-            });
+            points.push({ x: dv.getFloat32(s,true)*500, y: dv.getFloat32(s+4,true)*-500, z: dv.getFloat32(s+8,true)*500, r:187, g:255, b:3, a:0.3, size:2, type:'core'});
         }
-        document.getElementById('status').innerText = "SYSTEM: CORE ACTIVE";
-    } catch(e){ document.getElementById('status').innerText = "SYSTEM: CORE LOAD ERROR"; }
+        document.getElementById('status').innerText = "SYSTEM: ONLINE";
+    } catch(e){ document.getElementById('status').innerText = "CORE: LOAD ERROR"; }
 }
 
-// --- 2. PORTFOLIO SCANNEN ---
 async function loadPortfolio() {
     try {
         const res = await fetch(`https://api.github.com/repos/AdrianJaeschke/NAICE/contents/portfolio`);
@@ -106,8 +69,6 @@ async function loadPortfolio() {
         for (let [idx, folder] of folders.entries()) {
             const fRes = await fetch(folder.url), files = await fRes.json();
             const imgFiles = files.filter(f => f.name.match(/\.(jpg|jpeg|png)$/i));
-            
-            // Suche IRGENDEINE .txt Datei
             const anyTxtFile = files.find(f => f.name.toLowerCase().endsWith('.txt'));
 
             let dName = folder.name.toUpperCase();
@@ -122,17 +83,14 @@ async function loadPortfolio() {
             if (imgFiles.length > 0) {
                 const img = new Image(); img.crossOrigin = "anonymous"; img.src = imgFiles[0].download_url;
                 await new Promise(r => img.onload = r);
-                
                 const angle = (idx / folders.length) * Math.PI * 2;
-                const proj = { 
-                    name: dName, cx: Math.sin(angle)*680, cz: Math.cos(angle)*680, 
-                    focus: 0, img: img, angle: angle, allImages: imgFiles 
-                };
+                // RADIUS AUF 450 REDUZIERT
+                const proj = { name: dName, cx: Math.sin(angle)*450, cz: Math.cos(angle)*450, focus: 0, img: img, angle: angle, allImages: imgFiles };
                 projects.push(proj); 
                 extractPoints(proj);
             }
         }
-    } catch(e){ document.getElementById('status').innerText = "SYSTEM: API LIMIT REACHED"; }
+    } catch(e){ document.getElementById('status').innerText = "API LIMIT"; }
 }
 
 function extractPoints(proj) {
@@ -145,14 +103,12 @@ function extractPoints(proj) {
     }
 }
 
-// --- 3. STEUERUNG ---
 canvas.onmousedown = (e) => { if(!isWindowOpen) { isDragging = true; lastMouse = { x: e.clientX, y: e.clientY }; } };
 window.onmouseup = () => isDragging = false;
 window.onmousemove = (e) => {
     mouse.x = e.clientX; mouse.y = e.clientY;
     if (isDragging && !isWindowOpen) {
-        rotY += (e.clientX - lastMouse.x) * 0.005;
-        rotX += (e.clientY - lastMouse.y) * 0.005;
+        rotY += (e.clientX - lastMouse.x) * 0.005; rotX += (e.clientY - lastMouse.y) * 0.005;
         lastMouse = { x: e.clientX, y: e.clientY };
     }
     if (isWindowOpen) {
@@ -165,7 +121,7 @@ window.onmousemove = (e) => {
 };
 
 canvas.onclick = () => { 
-    const active = projects.find(p => p.focus > 0.7); 
+    const active = projects.find(p => p.focus > 0.6); 
     if(active && !isWindowOpen) openProject(active); 
 };
 
@@ -185,12 +141,10 @@ function openProject(proj) {
 function closeProject() { isWindowOpen = false; win.classList.remove('active'); }
 window.onkeydown = (e) => { if(e.key === "Escape") closeProject(); };
 
-// --- 4. RENDER LOOP ---
 function render() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     ctx.fillStyle = '#010103'; ctx.fillRect(0,0,canvas.width,canvas.height);
     const cx = canvas.width/2, cy = canvas.height/2;
-
     if (!isDragging && !isWindowOpen) rotY += 0.002;
     const cyR = Math.cos(rotY), syR = Math.sin(rotY), cxR = Math.cos(rotX), sxR = Math.sin(rotX);
 
@@ -198,7 +152,7 @@ function render() {
         let x1 = p.cx*cyR+p.cz*syR, z1 = p.cz*cyR-p.cx*syR, y2 = -z1*sxR, z2 = z1*cxR;
         const s = zoom/(zoom+z2);
         const dist = Math.sqrt((cx+x1*s-mouse.x)**2+(cy+y2*s-mouse.y)**2);
-        p.focus = (dist < 90*s) ? Math.min(1, p.focus+0.1) : Math.max(0, p.focus-0.1);
+        p.focus = (dist < 100*s) ? Math.min(1, p.focus+0.1) : Math.max(0, p.focus-0.1);
     });
 
     const drawList = points.map(p => {
@@ -210,7 +164,7 @@ function render() {
             y=ly; z = p.parent.cz+(lz*Math.cos(-p.parent.angle)-lx*Math.sin(-p.parent.angle));
         }
         let x1 = x*cyR+z*syR, z1 = z*cyR-x*syR, y2 = y*cxR-z1*sxR, z2 = z1*cxR+y*sxR;
-        const s = zoom/(zoom+z2); if(z2 < -zoom+100) return null;
+        const s = zoom/(zoom+z2); if(z2 < -zoom+50) return null; // Clipping angepasst
         return { px:cx+x1*s, py:cy+y2*s, pz:z2, s:p.size*s, col:`rgba(${p.r},${p.g},${p.b},${p.a*s})` };
     }).filter(p=>p).sort((a,b)=>b.pz-a.pz);
 
@@ -223,7 +177,7 @@ function render() {
         ctx.globalAlpha = 0.3+p.focus*0.7; ctx.fillStyle = "#FFF"; 
         ctx.font = `${14*s}px "Turret Road"`; ctx.textAlign = "center";
         ctx.fillText(p.name, 0, 45*s);
-        if(p.focus > 0.1) ctx.drawImage(p.img, -50*s, -120*s, 100*s, 100*s);
+        if(p.focus > 0.05) ctx.drawImage(p.img, -50*s, -120*s, 100*s, 100*s);
         ctx.restore();
     });
     requestAnimationFrame(render);
